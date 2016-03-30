@@ -22,7 +22,7 @@ unsafe impl Dimension for Dim {
 //---- Word ----------------------------------------------------------------------------
 pub type WordId = u32;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Word {
 	id: WordId, // unique id
 	str: Box<[dim]>,
@@ -39,7 +39,7 @@ impl ::std::ops::Index<dim> for Word {
 
 
 //---- Orientation ---------------------------------------------------------------------
-#[derive(PartialEq, Clone, Copy, Hash)]
+#[derive(PartialEq, Clone, Copy, Hash, Debug)]
 pub enum Orientation { 
 	HOR = 1,
 	VER = 0 
@@ -58,7 +58,7 @@ impl Orientation {
 //---- Placement -----------------------------------------------------------------------
 pub type PlacementId = u32;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Placement {
 	pub id: PlacementId,
 	pub x: dim,

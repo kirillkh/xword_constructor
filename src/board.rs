@@ -1,17 +1,9 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
-use std::cmp::Eq;
-use std::iter;
-use ndarray::{OwnedArray, Ix, Dimension, Si};
-use common::{dim, Word, Orientation, Placement, PlacementId, Dim};
+use ndarray::OwnedArray;
+use common::{dim, Placement, PlacementId, Dim};
 
 
 //---- BoardMove -----------------------------------------------------------------------
-
-//pub struct BoardMove<'a, Move: 'a+AsRef<Placement>> {
-//	mv: Move,
-//	dependants: Vec<&'a BoardMove<'a, Move>>
-//}
 
 #[derive(Clone)]
 pub struct BoardMove<Move: AsRef<Placement>+Clone> {

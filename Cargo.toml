@@ -10,3 +10,4 @@ name = "hello_world"
 
 [dependencies]
 ndarray = "0.4"
+rand = "0.3"
