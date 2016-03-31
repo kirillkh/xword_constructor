@@ -5,7 +5,7 @@ use common::{dim, Placement};
 use board::Board;
 
 
-const TOP_N_MOVES: usize = 1000;
+const NRPA_LEVEL: u8 = 4;
 const NRPA_ITERS: u32 = 100;
 const NRPA_ALPHA: f32 = 1.0;
 
@@ -20,8 +20,14 @@ impl Constructor {
 		Constructor { h:h, w:w }
 	}
 	
+	pub fn construct(&mut self, placements: &[Placement]) -> Vec<Placement> {
+		let moves: Vec<_> = placements.iter().map(|p| RankedMove { place:p.clone(), rank: 0. }).collect();
+		let chosen = self.nrpa(NRPA_LEVEL, &moves);
+		chosen.into_iter().map(|mv| mv.1.place).collect()
+	}
+	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	pub fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> Vec<ChosenMove> {
+	fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> Vec<ChosenMove> {
 		let mut moves = moves.to_vec();
 		let mut best_seq = vec![];
 			
@@ -166,13 +172,6 @@ impl Constructor {
 }
 
 
-struct PlayoutResult {
-	ranks: Vec<u32>,
-	max_rank: u32,
-}
-
-
-
 #[derive(Clone, Debug)]
 struct RankedMove {
 	place: Placement,
@@ -186,11 +185,9 @@ impl AsRef<Placement> for RankedMove {
 }
 
 
-//#[derive(Clone)]
 struct Partition { incl: Vec<usize>, excl: Vec<usize> }
 
 
-//#[derive(Clone)]
 struct ChosenMove(u32, RankedMove, Partition);
 
 impl AsRef<Placement> for ChosenMove {

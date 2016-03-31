@@ -1,6 +1,7 @@
 //---- Dim -----------------------------------------------------------------------------
 use ndarray::{Dimension, Si};
 
+#[allow(non_camel_case_types)]
 pub type dim = i8;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,7 +27,12 @@ pub type WordId = u32;
 pub struct Word {
 	id: WordId, // unique id
 	str: Box<[dim]>,
-	len: dim,
+}
+
+impl Word {
+	fn len(&self) -> dim {
+		self.str.len() as dim
+	}
 }
 
 impl ::std::ops::Index<dim> for Word {
@@ -78,7 +84,7 @@ impl Placement {
 	
 	pub fn fold_positions<A, F>(&self, init: A, mut f: F) -> A 
 			where F: FnMut(A, dim, dim) -> A {
-		let (x, y, len) = (self.x, self.y, self.word.len as dim);
+		let (x, y, len) = (self.x, self.y, self.word.len() as dim);
 		let (xc, yc) = self.orientation.align(1, 0);
 		
 		let mut acc = init;
@@ -95,7 +101,7 @@ impl Placement {
 		
 		let (u0, v0) = self.align(self.orientation);
 		let (u1, v1) = other.align(self.orientation);
-		let (len0, len1) = (self.word.len, other.word.len);
+		let (len0, len1) = (self.word.len(), other.word.len());
 		
 		if other.orientation == self.orientation {
 				u0 + len0	< u1 || u1 + len1	< u0 // other is right or left + gap

@@ -15,14 +15,13 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 //---- Board ---------------------------------------------------------------------------
 
 pub struct Board<Move: AsRef<Placement>+Clone> {
-	h: dim, w: dim,
 	field: OwnedArray<Vec<PlacementId>, Dim>,
 	moves: HashMap<PlacementId, BoardMove<Move>>
 }
 
 impl<Move: AsRef<Placement>+Clone> Board<Move> {
 	pub fn new(h: dim, w: dim) -> Board<Move> {
-		Board { h:h, w:w, field: OwnedArray::default(Dim(h, w)), moves: HashMap::new() }
+		Board { field: OwnedArray::default(Dim(h, w)), moves: HashMap::new() }
 	}
 	
 	pub fn place(&mut self, mv: Move) {
@@ -75,7 +74,6 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 		
 		// 2. collect adjancent words that need to be fixed (no word intersects them both at some position)
 		let mut adjacencies : HashSet<PlacementId> = self.moves.iter().filter_map(|(&id, bmv)| {
-			let init = AdjacencyTracker { last_isection: None, added_last: false };
 			let place = bmv.mv.as_ref();
 			let perp = place.orientation.align(0, 1);
 			let adj_found = place.fold_positions(false, |acc, x, y|
