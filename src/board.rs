@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use ndarray::OwnedArray;
-use common::{dim, Placement, PlacementId, Dim};
+use common::{dim, Placement, PlacementId, MatrixDim};
 
 
 //---- BoardMove -----------------------------------------------------------------------
@@ -15,13 +15,13 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 //---- Board ---------------------------------------------------------------------------
 
 pub struct Board<Move: AsRef<Placement>+Clone> {
-	field: OwnedArray<Vec<PlacementId>, Dim>,
+	field: OwnedArray<Vec<PlacementId>, MatrixDim>,
 	moves: HashMap<PlacementId, BoardMove<Move>>
 }
 
 impl<Move: AsRef<Placement>+Clone> Board<Move> {
 	pub fn new(h: dim, w: dim) -> Board<Move> {
-		Board { field: OwnedArray::default(Dim(h, w)), moves: HashMap::new() }
+		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new() }
 	}
 	
 	pub fn place(&mut self, mv: Move) {
@@ -29,7 +29,7 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 		let place_id = {
 			let place = bmv.mv.as_ref();
 			place.fold_positions((), |_, x, y| {
-				self.field[Dim(x, y)].push(place.id);
+				self.field[MatrixDim(x, y)].push(place.id);
 			});
 			place.id
 		};
@@ -50,7 +50,7 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			let init = AdjacencyTracker { last_isection: None, added_last: false };
 			let place = bmv.mv.as_ref();
 			place.fold_positions(init, |adjacency, x, y| {
-				if self.field[Dim(x, y)].len() == 2 {
+				if self.field[MatrixDim(x, y)].len() == 2 {
 					if let Some(prev_isection) = adjacency.last_isection {
 						if !adjacency.added_last {
 							deps.push((id, prev_isection)); 
@@ -79,8 +79,8 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			let adj_found = place.fold_positions(false, |acc, x, y|
 				acc || {
 					let neighbours = [
-						self.field.get(Dim(x + perp.0, y + perp.1)) as Option<&Vec<PlacementId>>,
-						self.field.get(Dim(x - perp.0, y - perp.1))
+						self.field.get(MatrixDim(x + perp.0, y + perp.1)) as Option<&Vec<PlacementId>>,
+						self.field.get(MatrixDim(x - perp.0, y - perp.1))
 					];
 					
 					neighbours.iter().any(|optvec| optvec.map_or(false, |vec| vec.len()==1))

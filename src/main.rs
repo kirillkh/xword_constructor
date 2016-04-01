@@ -11,10 +11,10 @@ use std::cmp::max;
 
 use regex::bytes::Regex;
 
-use ndarray::OwnedArray;
+use ndarray::{OwnedArray, Axis};
 
 use self::board::Board;
-use self::common::{dim, Word, Orientation, Placement, PlacementId, Dim};
+use self::common::{dim, Word, WordId, Orientation, Placement, PlacementId, MatrixDim, LineDim};
 use self::constructor::Constructor;
 
 mod board;
@@ -22,47 +22,16 @@ mod common;
 mod constructor;
 
 fn main() {
-	let path = Path::new("board.dat");
-    let display = path.display();
-
-    // Open the path in read-only mode, returns `io::Result<File>`
-    let mut file = match File::open(&path) {
-        // The `description` method of `io::Error` returns a string that
-        // describes the error
-        Err(why) => panic!("couldn't open {}: {}", display,
-                                                   Error::description(&why)),
-        Ok(file) => file,
-    };
-
-    // Read the file contents into a string, returns `io::Result<usize>`
-    let mut vec = vec![];
-    match file.read_to_end(&mut vec) {
-        Err(why) => panic!("couldn't read {}: {}", display,
-                                                   Error::description(&why)),
-        Ok(_) => ()
-    }
     
-	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})$((?:^[_x]+$)+)^-----$((?:^[a-z]+$)+)").unwrap();
-	let caps = re.captures(&vec).unwrap();
-	
-	let h = str::from_utf8(caps.at(1).unwrap()).unwrap().parse::<dim>().unwrap();
-	let w = str::from_utf8(caps.at(2).unwrap()).unwrap().parse::<dim>().unwrap();
-	let board_str = caps.at(3).unwrap();
-	let dic_str = caps.at(4).unwrap();
-	
-	let mut board: OwnedArray<bool, Dim> = OwnedArray::default(Dim(h, w));
-	let re = Regex::new(r"(?m)(^[_x]+$)").unwrap();
-    for (i, cap) in re.captures_iter(board_str).enumerate() {
-    	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
-    		let (i, j) = (i as i8, j as i8);
-    		match c {
-    			b'_' => board[Dim(i, j)] = true,
-    			b'x' => board[Dim(i, j)] = false,
-    			_    => panic!("unexpected char: {}", c)
-    		}
-    	}
-    }
-    println!("{:?}", board);
+    let bytes = read_problem();
+    
+    let problem = parse(bytes);
+    
+    let placements = gen_placements(&problem);
+    
+    println!("BOARD={:?}", problem.board);
+    println!("DIC={:?}", problem.dic);
+    println!("PLACEMENTS: {:?}", placements);
     
     
     
@@ -110,8 +79,117 @@ fn main() {
     
     
     
-    let moves = vec![];
-	
-	let seq = Constructor::new(10, 10).construct(&moves);
+	let dim = problem.board.dim();
+	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
 	println!("seq = {:?}", seq);
+}
+
+
+fn gen_placements(problem: &Problem) -> Vec<Placement> {
+	let mut sorted = problem.dic.clone();
+	sorted.sort_by(|a, b| a.len().cmp(&b.len()));
+	
+	let mut out_placements = vec![];
+	
+	let board = &problem.board;
+	let mut placement_id = 0;
+	for &orientation in Orientation::values().iter() {
+		let axis = orientation as usize;
+		for i in 0 .. board.dim()[axis] {
+			let line = board.subview(Axis(axis), i as usize);
+			let mut run_len = 0;
+			for j in 0 .. *line.dim() {
+				match line[LineDim(j)] {
+					true => {
+						run_len += 1;
+						let placements: Vec<Placement> = sorted.iter()
+							.cloned()
+							.map(|word| 
+								if word.len() <= run_len {
+									placement_id += 1;
+									let (x, y) = orientation.align(j + 1 - word.len(), i);
+									Some(Placement::new(placement_id, orientation, x, y, word))
+								} else { None }
+							)
+							.fuse()
+							.flat_map(|word_opt| word_opt)
+							.collect();
+						out_placements.extend(placements);
+					},
+					false => {
+						run_len = 0
+					},
+//					_ 	 => panic!("impossible")
+				}
+			}
+		}
+	}
+	
+	out_placements
+}
+
+fn read_problem() -> Vec<u8> {
+	let path = Path::new("problem.xword");
+    let display = path.display();
+
+	// 1. read the file
+    // Open the path in read-only mode, returns `io::Result<File>`
+    let mut file = match File::open(&path) {
+        // The `description` method of `io::Error` returns a string that
+        // describes the error
+        Err(why) => panic!("couldn't open {}: {}", display,
+                                                   Error::description(&why)),
+        Ok(file) => file,
+    };
+
+    // Read the file contents into a string, returns `io::Result<usize>`
+    let mut bytes : Vec<u8> = vec![];
+    match file.read_to_end(&mut bytes) {
+        Err(why) => panic!("couldn't read {}: {}", display,
+                                                   Error::description(&why)),
+        Ok(_) => ()
+    }
+    
+    bytes
+} 
+
+
+struct Problem {
+	dic: Vec<Word>,
+	board: OwnedArray<bool, MatrixDim>,
+}
+
+fn parse(bytes: Vec<u8>) -> Problem {
+	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})\n((?:[_#]+\n)+)-----((?:\n[a-z]+)+)\n*$").unwrap();
+	let caps = re.captures(&bytes).unwrap();
+	
+	let h = str::from_utf8(caps.at(1).unwrap()).unwrap().parse::<dim>().unwrap();
+	let w = str::from_utf8(caps.at(2).unwrap()).unwrap().parse::<dim>().unwrap();
+	let board_str = caps.at(3).unwrap();
+	
+	let dic_str = caps.at(4).unwrap();
+	let re = Regex::new(r"^(?m)(^.+$)").unwrap();
+	let mut dic : Vec<Word> = vec![];
+	let mut id : WordId = 0;
+    for cap in re.captures_iter(dic_str) {
+    	let cap = cap.at(1).unwrap();
+    	let boxed = cap.to_vec().into_boxed_slice();
+    	dic.push(Word::new(id, boxed));
+    	id += 1;
+    }
+	
+	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
+	let re = Regex::new(r"(?m)(^[_#]+$)").unwrap();
+    for (i, cap) in re.captures_iter(board_str).enumerate() {
+    	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
+    		let (i, j) = (i as dim, j as dim);
+    		match c {
+    			b'_' => board[MatrixDim(i, j)] = true,
+    			b'x' => board[MatrixDim(i, j)] = false,
+    			_    => panic!("unexpected char: {}", c)
+    		}
+    	}
+    }
+    
+    Problem { dic: dic, board: board }
 }

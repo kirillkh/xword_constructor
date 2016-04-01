@@ -5,7 +5,7 @@ use common::{dim, Placement};
 use board::Board;
 
 
-const NRPA_LEVEL: u8 = 4;
+const NRPA_LEVEL: u8 = 3;
 const NRPA_ITERS: u32 = 100;
 const NRPA_ALPHA: f32 = 1.0;
 

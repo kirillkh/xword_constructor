@@ -1,42 +1,101 @@
-//---- Dim -----------------------------------------------------------------------------
-use ndarray::{Dimension, Si};
+//---- Dim -------------------------------------------------------------------------------
+use std::ops::{Index, Deref};
+use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix};
 
 #[allow(non_camel_case_types)]
-pub type dim = i8;
+pub type dim = Ix;
+
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Dim(pub dim, pub dim);
+pub struct MatrixDim(pub dim, pub dim);
 
-impl Dim {
-	fn tuple(t: (dim, dim)) -> Dim { Dim(t.0, t.1) }
+impl MatrixDim {
+	fn tuple(t: (dim, dim)) -> MatrixDim { MatrixDim(t.0, t.1) }
 }
 
-impl Eq for Dim {}
+impl Index<usize> for MatrixDim {
+    type Output = dim;
 
-unsafe impl Dimension for Dim {
+    fn index(&self, index: usize) -> &Self::Output {
+		match index {
+			0 => &self.0,
+			1 => &self.1,
+			_ => panic!("wrong dimension")
+		}
+    }
+}
+
+impl Eq for MatrixDim {}
+
+unsafe impl Dimension for MatrixDim {
 	type SliceArg = [Si; 2];
 	#[inline]
 	fn ndim(&self) -> usize { 2 }
+	
+    fn size(&self) -> usize {
+    	self.0 * self.1
+    }
 }
 
+impl RemoveAxis for MatrixDim {
+    type Smaller = LineDim;
+    
+    fn remove_axis(&self, axis: Axis) -> Self::Smaller {
+//    	if let Axis(1) = axis {
+//    		
+//    	} else {
+//    		panic!("slicing not supported");
+//    	}
+		match axis {
+			Axis(0) => LineDim(self.1),
+			Axis(1) => LineDim(self.0),
+			_ => panic!("wrong axis")
+		}
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineDim(pub dim);
+
+impl Eq for LineDim {}
+
+
+unsafe impl Dimension for LineDim {
+	type SliceArg = [Si; 1];
+	#[inline]
+	fn ndim(&self) -> usize { 1 }
+}
+
+
+impl Deref for LineDim {
+	type Target = dim;
+	
+    fn deref(&self) -> &Self::Target {
+    	&self.0
+    }
+}
 
 //---- Word ----------------------------------------------------------------------------
 pub type WordId = u32;
 
 #[derive(Clone, Debug)]
 pub struct Word {
-	id: WordId, // unique id
-	str: Box<[dim]>,
+	pub id: WordId, // unique id
+	pub str: Box<[u8]>,
 }
 
 impl Word {
-	fn len(&self) -> dim {
+	pub fn new(id: WordId, str: Box<[u8]>) -> Word {
+		Word { id:id, str:str }
+	}
+	
+	pub fn len(&self) -> dim {
 		self.str.len() as dim
 	}
 }
 
 impl ::std::ops::Index<dim> for Word {
-	type Output = dim;
+	type Output = u8;
 	
     fn index(&self, index: dim) -> &Self::Output {
     	&self.str[index as usize]
@@ -52,12 +111,23 @@ pub enum Orientation {
 }
 
 impl Orientation {
-	pub fn align(self, x: dim, y: dim) -> (dim, dim) {
+	pub fn values() -> &'static [Orientation] { 
+		static VALUES : &'static [Orientation] = &[Orientation::VER, Orientation::HOR];
+		VALUES
+	}
+	
+	pub fn align(self, u: dim, v: dim) -> (dim, dim) {
 		let d0 = self as dim;
 		let d1 = 1 - d0;
 		
-		(x.cond(d0) + y.cond(d1), x.cond(d1) + y.cond(d0))
+		(u.cond(d0) + v.cond(d1), u.cond(d1) + v.cond(d0))
 	}
+	
+//	pub fn by_val(val: usize) -> Orientation {
+//		match val {
+//			Orientation::HOR => Orientation::HOR
+//		}
+//	}
 }
 
 
@@ -128,16 +198,16 @@ trait Cond {
 	fn cond(self, flag: Self) -> Self;
 }
 
-impl Cond for usize {
-	fn cond(self, flag: Self) -> Self {
-		let (a, f) = (self as i32, flag as i32);
-		(a & -f) as Self
-	}
-}
+//impl Cond for usize {
+//	fn cond(self, flag: Self) -> Self {
+//		let (a, f) = (self as i32, flag as i32);
+//		(a & -f) as Self
+//	}
+//}
 
 impl Cond for dim {
 	fn cond(self, flag: Self) -> Self {
-		let (a, f) = (self as i32, flag as i32);
+		let (a, f) = (self as i64, flag as i64);
 		(a & -f) as Self
 	}
 }
