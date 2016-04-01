@@ -21,7 +21,7 @@ pub struct Board<Move: AsRef<Placement>+Clone> {
 
 impl<Move: AsRef<Placement>+Clone> Board<Move> {
 	pub fn new(h: dim, w: dim) -> Board<Move> {
-		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new() }
+		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new() }
 	}
 	
 	pub fn place(&mut self, mv: Move) {
