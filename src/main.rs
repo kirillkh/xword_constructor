@@ -94,7 +94,7 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 	let board = &problem.board;
 	let mut placement_id = 0;
 	for &orientation in Orientation::values().iter() {
-		let axis = orientation as usize;
+		let axis = 1-orientation as usize;
 		for i in 0 .. board.dim()[axis] {
 			let line = board.subview(Axis(axis), i as usize);
 			let mut run_len = 0;
@@ -168,7 +168,7 @@ fn parse(bytes: Vec<u8>) -> Problem {
 	let board_str = caps.at(3).unwrap();
 	
 	let dic_str = caps.at(4).unwrap();
-	let re = Regex::new(r"^(?m)(^.+$)").unwrap();
+	let re = Regex::new(r"(?m)\n?(^.+)").unwrap();
 	let mut dic : Vec<Word> = vec![];
 	let mut id : WordId = 0;
     for cap in re.captures_iter(dic_str) {
@@ -179,7 +179,7 @@ fn parse(bytes: Vec<u8>) -> Problem {
     }
 	
 	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
-	let re = Regex::new(r"(?m)(^[_#]+$)").unwrap();
+	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
     for (i, cap) in re.captures_iter(board_str).enumerate() {
     	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
     		let (i, j) = (i as dim, j as dim);
