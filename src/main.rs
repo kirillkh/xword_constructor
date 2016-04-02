@@ -226,7 +226,7 @@ fn parse(bytes: Vec<u8>) -> Problem {
     		let (i, j) = (i as dim, j as dim);
     		match c {
     			b'_' => board[MatrixDim(i, j)] = true,
-    			b'x' => board[MatrixDim(i, j)] = false,
+    			b'#' => board[MatrixDim(i, j)] = false,
     			_    => panic!("unexpected char: {}", c)
     		}
     	}

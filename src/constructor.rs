@@ -187,10 +187,7 @@ impl Constructor {
 				j += 1;
 			}
 		}
-//		items.truncate(j);
-		unsafe { 
-			items.set_len(j);
-		}
+		items.truncate(j);
 		items
 	}
 }
