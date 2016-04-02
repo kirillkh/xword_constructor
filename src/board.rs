@@ -7,7 +7,7 @@ use common::{dim, Placement, PlacementId, MatrixDim};
 
 #[derive(Clone)]
 pub struct BoardMove<Move: AsRef<Placement>+Clone> {
-	mv: Move,
+	pub mv: Move,
 	dependants: Vec<PlacementId>
 }
 
@@ -15,8 +15,8 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 //---- Board ---------------------------------------------------------------------------
 
 pub struct Board<Move: AsRef<Placement>+Clone> {
-	field: OwnedArray<Vec<PlacementId>, MatrixDim>,
-	moves: HashMap<PlacementId, BoardMove<Move>>
+	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
+	pub moves: HashMap<PlacementId, BoardMove<Move>>
 }
 
 impl<Move: AsRef<Placement>+Clone> Board<Move> {
@@ -50,16 +50,18 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			let init = AdjacencyTracker { last_isection: None, added_last: false };
 			let place = bmv.mv.as_ref();
 			place.fold_positions(init, |adjacency, x, y| {
-				if self.field[MatrixDim(x, y)].len() == 2 {
+				let placements = &self.field[MatrixDim(x, y)];
+				if placements.len() == 2 {
+					let other_id = (if placements[0] == id { placements[1] } else { placements[0] });
 					if let Some(prev_isection) = adjacency.last_isection {
 						if !adjacency.added_last {
 							deps.push((id, prev_isection)); 
 						}
-						deps.push((id, place.id)); 
+						deps.push((id, other_id)); 
 						
-						AdjacencyTracker { last_isection: Some(place.id), added_last: true }
+						AdjacencyTracker { last_isection: Some(other_id), added_last: true }
 					} else {
-						AdjacencyTracker { last_isection: Some(place.id), added_last: false }
+						AdjacencyTracker { last_isection: Some(other_id), added_last: false }
 					}
 				} else {
 					AdjacencyTracker { last_isection: None, added_last: false }
@@ -79,7 +81,7 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			let adj_found = place.fold_positions(false, |acc, x, y|
 				acc || {
 					// if there is an intersection at (x,y), it is impossible to have adjacency problems with the neighbours
-					if self.field.get(MatrixDim(x, y)).unwrap().len() == 2 {
+					if self.field[MatrixDim(x, y)].len() == 2 {
 						return false;
 					}
 					

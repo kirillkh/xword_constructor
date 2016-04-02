@@ -82,8 +82,49 @@ fn main() {
 	let dim = problem.board.dim();
 	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
 	println!("seq = {:?}", seq);
+	
+	for &or in Orientation::values() {
+		println!("------- {:?} -------", or);
+		let moves = seq.iter().cloned().filter(|place| place.orientation == or).collect();
+		print_board(dim.0, dim.1, moves);
+	}
 }
 
+
+fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
+	let mut board : Board<&Placement> = Board::new(h, w);
+//			static mut board: Board<Move> = Board::new(self.h, self.w);
+
+	impl<'a> AsRef<Placement> for Placement {
+		fn as_ref(&self) -> &Placement { &self }
+	}
+
+	
+	for mv in seq.iter() {
+		board.place(mv); 
+	}
+	
+	for i in 0..h {
+		for j in 0..w {
+			let opt_pid = board.field[MatrixDim(j, i)].first();
+			if let Some(pid) = opt_pid {
+					let plc = &board.moves[pid];
+					
+					let mv = &plc.mv;
+					match mv.orientation {
+						Orientation::HOR =>
+							print!("{}", mv.word.str[j - mv.x] as char),
+						Orientation::VER =>
+							print!("{}", mv.word.str[i - mv.y] as char),
+					}
+			} else {
+							print!("_")
+			}
+		}
+		
+		print!("\n");
+	}
+}
 
 fn gen_placements(problem: &Problem) -> Vec<Placement> {
 	let mut sorted = problem.dic.clone();

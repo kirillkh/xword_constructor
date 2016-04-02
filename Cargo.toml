@@ -1,14 +1,22 @@
 [package]
 
-name = "hello_world"
+name = "xword_constructor"
 version = "0.0.1"
-authors = [ "Your name <you@example.com>" ]
+authors = [ "Kirill Khazan <kirillkh@gmail.com>" ]
 
 [[bin]]
 
-name = "hello_world"
+name = "xword"
 
 [dependencies]
 ndarray = "0.4"
 rand = "0.3"
 regex = "0.1"
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1

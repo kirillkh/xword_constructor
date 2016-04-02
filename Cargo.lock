@@ -1,5 +1,5 @@
 [root]
-name = "hello_world"
+name = "xword_constructor"
 version = "0.0.1"
 dependencies = [
  "ndarray 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
