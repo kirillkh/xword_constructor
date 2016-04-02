@@ -7,14 +7,13 @@ use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use std::cmp::max;
 
 use regex::bytes::Regex;
 
 use ndarray::{OwnedArray, Axis};
 
 use self::board::Board;
-use self::common::{dim, Word, WordId, Orientation, Placement, PlacementId, MatrixDim, LineDim};
+use self::common::{dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim};
 use self::constructor::Constructor;
 
 mod board;
@@ -31,7 +30,7 @@ fn main() {
     
     println!("BOARD={:?}", problem.board);
     println!("DIC={:?}", problem.dic);
-    println!("PLACEMENTS: {:?}", placements);
+//    println!("PLACEMENTS: {:?}", placements);
     
     
     
@@ -92,7 +91,8 @@ fn main() {
 
 
 fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
-	let mut board : Board<&Placement> = Board::new(h, w);
+	let mut rng = common::make_rng();
+	let mut board : Board<&Placement> = Board::new(h, w, &mut rng);
 //			static mut board: Board<Move> = Board::new(self.h, self.w);
 
 	impl<'a> AsRef<Placement> for Placement {

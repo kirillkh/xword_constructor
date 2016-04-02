@@ -1,6 +1,26 @@
+use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 use ndarray::OwnedArray;
 use common::{dim, Placement, PlacementId, MatrixDim};
+
+use rand::distributions::{IndependentSample, Range};
+use rand::XorShiftRng;
+
+
+//---- Eff -----------------------------------------------------------------------------
+#[allow(non_camel_case_types)]
+pub type eff_t = u32;
+
+pub struct Eff(pub eff_t);
+
+impl Deref for Eff {
+	type Target = eff_t;
+	
+    fn deref(&self) -> &Self::Target {
+    	&self.0
+    }
+}
+
 
 
 //---- BoardMove -----------------------------------------------------------------------
@@ -14,14 +34,15 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 
 //---- Board ---------------------------------------------------------------------------
 
-pub struct Board<Move: AsRef<Placement>+Clone> {
+pub struct Board<'a, Move: AsRef<Placement>+Clone> {
 	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
-	pub moves: HashMap<PlacementId, BoardMove<Move>>
+	pub moves: HashMap<PlacementId, BoardMove<Move>>,
+	rng: &'a mut XorShiftRng
 }
 
-impl<Move: AsRef<Placement>+Clone> Board<Move> {
-	pub fn new(h: dim, w: dim) -> Board<Move> {
-		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new() }
+impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
+	pub fn new(h: dim, w: dim, rng: &'a mut XorShiftRng) -> Board<Move> {
+		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new(), rng:rng }
 	}
 	
 	pub fn place(&mut self, mv: Move) {
@@ -34,6 +55,39 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			place.id
 		};
 		self.moves.insert(place_id, bmv);
+	}
+	
+	
+	pub fn delete(&mut self, id: PlacementId) -> Option<BoardMove<Move>> {
+		let bmv = self.moves.remove(&id);
+		if let Some(ref bmv) = bmv {
+			let place = bmv.mv.as_ref();
+			place.fold_positions((), |_, x, y| {
+					let items = &mut self.field[MatrixDim(x, y)];
+					if items.len() == 0 {
+					} else if items.len() == 1 || items[0] == id {
+						items.swap_remove(0);
+					} else {
+						items.remove(1);
+					}
+			});
+		}
+		
+		// TODO: clean up the list of dependants of the move bmv depends upon
+		
+		bmv
+	}
+	
+	/// Returns 1 for every letter intersected on the board.
+	pub fn efficiency(&self) -> Eff {
+		let intersections = self.moves.values().fold(0, |acc, bmv| { 
+				let place = bmv.mv.as_ref();
+				place.fold_positions(acc, |acc, x, y| {
+					acc + self.field[MatrixDim(x, y)].len() - 1
+				})
+		}) as u32;
+		
+		Eff(intersections / 2)
 	}
 	
 	
@@ -52,7 +106,9 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			place.fold_positions(init, |adjacency, x, y| {
 				let placements = &self.field[MatrixDim(x, y)];
 				if placements.len() == 2 {
-					let other_id = (if placements[0] == id { placements[1] } else { placements[0] });
+					let other_id = 
+						if placements[0] == id { placements[1] } 
+						else { placements[0] };
 					if let Some(prev_isection) = adjacency.last_isection {
 						if !adjacency.added_last {
 							deps.push((id, prev_isection)); 
@@ -75,7 +131,44 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 		
 		
 		// 2. collect adjancent words that need to be fixed (no word intersects them both at some position)
-		let mut adjacencies : HashSet<PlacementId> = self.moves.iter().filter_map(|(&id, bmv)| {
+		let mut adjacencies : HashSet<PlacementId> = self.find_adjacencies(self.moves.values());
+		
+		// TODO: we should delete moves with probability inverse proportional to their rank 
+		let between = Range::new(0, 2);
+//		let mut rng = rand::thread_rng();
+
+		while !adjacencies.is_empty() {
+			adjacencies = adjacencies.into_iter().flat_map(|adj| {
+					let v = between.ind_sample(self.rng);
+					
+					let out : Vec<_> = 
+						if v==0 {
+							let bmv : Option<BoardMove<Move>> = self.delete(adj);
+							if let Some(bmv) = bmv {
+								bmv.dependants
+							} else {
+								vec![]
+							}
+						} else {
+							vec![adj]
+						};
+					out.into_iter()
+			}).collect();
+			
+			let suspects = adjacencies.into_iter()
+								  	  .filter(|dep| self.moves.contains_key(&dep))
+								      .map(|adj| &self.moves[&adj]);
+			adjacencies = self.find_adjacencies(suspects);
+		};
+		
+		self.moves.iter().map(|(_, bmv)| bmv.mv.clone()).collect()
+	}
+	
+	
+	fn find_adjacencies<'b, Iter: Iterator<Item=&'b BoardMove<Move>>>(&self, suspect_moves: Iter) -> HashSet<PlacementId>
+	where Move: 'b
+	{
+		let adjacencies : HashSet<PlacementId> = suspect_moves.filter_map(|bmv| {
 			let place = bmv.mv.as_ref();
 			let perp = place.orientation.align(0, 1);
 			let adj_found = place.fold_positions(false, |acc, x, y|
@@ -99,21 +192,11 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 				} 
 			);
 			
-			if adj_found { Some(id) }
+			if adj_found { Some(place.id) }
 			else { None }
 		}).collect();
 		
-		// 3. remove them all! (this can be improved: remove random words, then recheck; rinse, repeat)
-		let mut bmvs = self.moves.clone();
-		while !adjacencies.is_empty() {
-			adjacencies = adjacencies.into_iter().flat_map(|adj| {
-				let bmv : Option<BoardMove<Move>> = bmvs.remove(&adj);
-				let empty = || vec![].into_iter();
-				bmv.map_or_else(empty, |bmv| bmv.dependants.into_iter())
-			}).collect();
-		};
-		
-		bmvs.into_iter().map(|(_, bmv)| bmv.mv).collect()
+		adjacencies
 	}
 }
 

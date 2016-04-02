@@ -1,6 +1,7 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, Deref};
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix};
+use rand::{SeedableRng, XorShiftRng};
 
 #[allow(non_camel_case_types)]
 pub type dim = Ix;
@@ -257,4 +258,11 @@ mod tests {
     	}
     	
     }
+}
+
+
+
+pub fn make_rng() -> XorShiftRng {
+	let seed: &[u32;4] = &[1, 2, 3, 4];
+	XorShiftRng::from_seed(*seed)
 }

@@ -1,35 +1,46 @@
-use rand;
 use rand::distributions::{IndependentSample, Range};
+use rand::XorShiftRng;
 
-use common::{dim, Placement};
-use board::Board;
+use common::{dim, Placement, make_rng};
+use board::{Board, Eff};
 
 
-const NRPA_LEVEL: u8 = 3;
-const NRPA_ITERS: u32 = 100;
-const NRPA_ALPHA: f32 = 1.0;
+//const NRPA_LEVEL: u8 = 1;
+//const NRPA_ITERS: u32 = 15500;
+//const NRPA_LEVEL: u8 = 2;
+//const NRPA_ITERS: u32 = 125;
+//const NRPA_LEVEL: u8 = 3;
+//const NRPA_ITERS: u32 = 25;
+const NRPA_LEVEL: u8 = 4;
+const NRPA_ITERS: u32 = 11;
+
+const NRPA_ALPHA: f32 = 5.0;
+
+
 
 
 pub struct Constructor {
 	pub h: dim,
 	pub w: dim,
+	rng: XorShiftRng
 }
 
 impl Constructor {
 	pub fn new(h: dim, w: dim) -> Constructor {
-		Constructor { h:h, w:w }
+		Constructor { h:h, w:w, rng:make_rng() }
 	}
 	
 	pub fn construct(&mut self, placements: &[Placement]) -> Vec<Placement> {
 		let moves: Vec<_> = placements.iter().map(|p| RankedMove { place:p.clone(), rank: 0. }).collect();
-		let chosen = self.nrpa(NRPA_LEVEL, &moves);
-		chosen.into_iter().map(|mv| mv.1.place).collect()
+		let (seq, _) = self.nrpa(NRPA_LEVEL, &moves);
+		seq.into_iter().map(|mv| mv.1.place).collect()
 	}
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> Vec<ChosenMove> {
+	fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff) {
 		let mut moves = moves.to_vec();
 		let mut best_seq = vec![];
+		let mut best_eff = Eff(0);
 			
 		if level == 0 {
 			{
@@ -42,7 +53,7 @@ impl Constructor {
 					let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 					let chosen_idx = {
 						let between = Range::new(0., z);
-						let mut v = between.ind_sample(&mut rand::thread_rng());
+						let mut v = between.ind_sample(&mut self.rng);
 						
 						let mut chosen_idx = 0;
 						for (i, rnk) in exp_ranks.into_iter().enumerate() {
@@ -73,14 +84,17 @@ impl Constructor {
 		} else {
 			let mut moves : Vec<RankedMove> = moves.to_vec();
 			for _ in 0..NRPA_ITERS {
-				let new_seq = self.nrpa(level - 1, &moves);
-				if new_seq.len() >= best_seq.len() {
+				let (new_seq, new_eff) = self.nrpa(level - 1, &moves);
+				if new_seq.len() > best_seq.len() || 
+				   (new_seq.len() == best_seq.len() && *new_eff >= *best_eff) 
+				{
 					best_seq = new_seq;
+					best_eff = new_eff;
 				}
 				moves = self.nrpa_adapt(moves, &best_seq); 
 			}
 			
-			best_seq
+			(best_seq, best_eff)
 		}
 	}
 	
@@ -108,7 +122,7 @@ impl Constructor {
 	}
 	
 	
-	fn fixup_board<Move: AsRef<Placement>> (&self, seq: Vec<Move>) -> Vec<Move> {
+	fn fixup_board<Move: AsRef<Placement>> (&mut self, seq: Vec<Move>) -> (Vec<Move>, Eff) {
 		#[derive(Clone)]
 		struct IndexedMove<'a> {
 			place: &'a Placement,
@@ -119,9 +133,11 @@ impl Constructor {
 			fn as_ref(&self) -> &Placement { &self.place }
 		}
 //		
-		let fixed_indices : Vec<usize> = {
-			// TODO: this is very expensive, need to cache
-			let mut board = Board::new(self.h, self.w);
+		let fixed_indices: Vec<usize>;
+		let eff: Eff;
+		{
+			// TODO: this may be expensive, might need to cache
+			let mut board = Board::new(self.h, self.w, &mut self.rng);
 			
 			for (i, mv) in seq.iter().enumerate() {
 				let idxmv = IndexedMove { place: mv.as_ref(), moves_idx: i };
@@ -129,10 +145,11 @@ impl Constructor {
 			}
 			
 			let fixed : Vec<IndexedMove> = board.fixup_adjacent();
-			fixed.into_iter().map(|idxmv| idxmv.moves_idx).collect()
+			fixed_indices = fixed.into_iter().map(|idxmv| idxmv.moves_idx).collect();
+			eff = board.efficiency();
 		};
 		
-		Constructor::filter_indices(seq, &fixed_indices)
+		(Constructor::filter_indices(seq, &fixed_indices), eff)
 	}
 	
 	
@@ -170,7 +187,6 @@ impl Constructor {
 //		}
 //		
 //		out
-//		let mut out = Vec::with_capacity(items.len());
 
 		let mut keep = vec![ false; items.len() ];
 		for &index in indices {
@@ -181,7 +197,6 @@ impl Constructor {
 		for i in 0..items.len() {
 			if keep[i] {
 				if i!=j {
-//					out.push(item)
 					items.swap(j, i);
 				}
 				j += 1;
