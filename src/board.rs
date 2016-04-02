@@ -78,9 +78,19 @@ impl<Move: AsRef<Placement>+Clone> Board<Move> {
 			let perp = place.orientation.align(0, 1);
 			let adj_found = place.fold_positions(false, |acc, x, y|
 				acc || {
+					// if there is an intersection at (x,y), it is impossible to have adjacency problems with the neighbours
+					if self.field.get(MatrixDim(x, y)).unwrap().len() == 2 {
+						return false;
+					}
+					
+					// otherwise do the neighbour check
+					let (x, y) = (x as isize, y as isize);
+					let (xd, yd) = (perp.0 as isize, perp.1 as isize);
+					let (x1, y1) = (x + xd, y + yd);
+					let (x2, y2) = (x - xd, y - yd);
 					let neighbours = [
-						self.field.get(MatrixDim(x + perp.0, y + perp.1)) as Option<&Vec<PlacementId>>,
-						self.field.get(MatrixDim(x - perp.0, y - perp.1))
+						self.field.get(MatrixDim(x1 as dim, y1 as dim)) as Option<&Vec<PlacementId>>,
+						self.field.get(MatrixDim(x2 as dim, y2 as dim))
 					];
 					
 					neighbours.iter().any(|optvec| optvec.map_or(false, |vec| vec.len()==1))
