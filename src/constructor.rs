@@ -67,7 +67,6 @@ impl Constructor {
 			}
 			
 			self.fixup_board(best_seq)
-			
 		} else {
 			let mut moves : Vec<RankedMove> = moves.to_vec();
 			for _ in 0..NRPA_ITERS {

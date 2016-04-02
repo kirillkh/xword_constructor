@@ -212,3 +212,32 @@ impl Cond for dim {
 	}
 }
 
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn same_line_incompat_placements() {
+    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
+    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
+    	let p2 = Placement::new(1, Orientation::HOR, 0, 0, word2);
+    	
+    	assert_eq!(p1.compatible(&p2), false);
+    	assert_eq!(p2.compatible(&p1), false);
+    }
+
+    #[test]
+    fn compat_placements() {
+    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
+    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
+    	let p2 = Placement::new(1, Orientation::VER, 0, 0, word2);
+    	
+    	assert_eq!(p1.compatible(&p2), true);
+    	assert_eq!(p2.compatible(&p1), true);
+    }
+}
