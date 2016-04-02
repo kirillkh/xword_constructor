@@ -218,6 +218,7 @@ impl Cond for dim {
 #[cfg(test)]
 mod tests {
     use super::*;
+	use super::Orientation::*;
 
     #[test]
     fn same_line_incompat_placements() {
@@ -232,12 +233,28 @@ mod tests {
 
     #[test]
     fn compat_placements() {
-    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
-    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
-    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
-    	let p2 = Placement::new(1, Orientation::VER, 0, 0, word2);
+    	let word = |wid, str: &[u8]| Word::new(wid, str.to_vec().into_boxed_slice());
+    	let place = |pid, or, x, y, word| Placement::new(pid, or, x, y, word);
     	
-    	assert_eq!(p1.compatible(&p2), true);
-    	assert_eq!(p2.compatible(&p1), true);
+    	{
+	    	let word1 = word(0, b"abc");
+	    	let word2 = word(1, b"ab");
+	    	let p1 = place(0, HOR, 0, 0, word1);
+	    	let p2 = place(1, VER, 0, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"ab");
+	    	let p1 = place(0, HOR, 0, 1, word1);
+	    	let p2 = place(1, VER, 0, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
     }
 }
