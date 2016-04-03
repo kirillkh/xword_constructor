@@ -1,5 +1,6 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, Deref};
+use std::rc::Rc;
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix};
 use rand::{SeedableRng, XorShiftRng};
 
@@ -82,12 +83,12 @@ pub type WordId = u32;
 #[derive(Clone, Debug)]
 pub struct Word {
 	pub id: WordId, // unique id
-	pub str: Box<[u8]>,
+	pub str: Rc<Box<[u8]>>,
 }
 
 impl Word {
 	pub fn new(id: WordId, str: Box<[u8]>) -> Word {
-		Word { id:id, str:str }
+		Word { id:id, str: Rc::new(str) }
 	}
 	
 	pub fn len(&self) -> dim {
@@ -263,6 +264,6 @@ mod tests {
 
 
 pub fn make_rng() -> XorShiftRng {
-	let seed: &[u32;4] = &[1, 2, 3, 4];
-	XorShiftRng::from_seed(*seed)
+	let seed: [u32;4] = [1, 2, 3, 4];
+	XorShiftRng::from_seed(seed)
 }

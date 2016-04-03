@@ -28,7 +28,6 @@ fn main() {
     
     let placements = gen_placements(&problem);
     
-    println!("BOARD={:?}", problem.board);
     println!("DIC={:?}", problem.dic);
 //    println!("PLACEMENTS: {:?}", placements);
     
@@ -95,7 +94,7 @@ fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
 	let mut board : Board<&Placement> = Board::new(h, w, &mut rng);
 //			static mut board: Board<Move> = Board::new(self.h, self.w);
 
-	impl<'a> AsRef<Placement> for Placement {
+	impl AsRef<Placement> for Placement {
 		fn as_ref(&self) -> &Placement { &self }
 	}
 

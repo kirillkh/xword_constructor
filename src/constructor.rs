@@ -11,10 +11,12 @@ use board::{Board, Eff};
 //const NRPA_ITERS: u32 = 125;
 //const NRPA_LEVEL: u8 = 3;
 //const NRPA_ITERS: u32 = 25;
+//const NRPA_LEVEL: u8 = 4;
+//const NRPA_ITERS: u32 = 11;
 const NRPA_LEVEL: u8 = 4;
-const NRPA_ITERS: u32 = 11;
+const NRPA_ITERS: u32 = 20;
 
-const NRPA_ALPHA: f32 = 5.0;
+const NRPA_ALPHA: f32 = 2.71828;
 
 
 
@@ -45,18 +47,18 @@ impl Constructor {
 		if level == 0 {
 			{
 				let mut refs : Vec<&mut RankedMove> = moves.iter_mut().collect();
+				let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| mv.rank.exp()).collect();
 				
 				// random rollout according to the policy
 				while !refs.is_empty() {
 					// 1. choose a move based on probability proportional to exp(mv.rank)
-					let exp_ranks : Vec<f32> = refs.iter().map(|mv| mv.rank.exp()).collect();
 					let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 					let chosen_idx = {
 						let between = Range::new(0., z);
 						let mut v = between.ind_sample(&mut self.rng);
 						
 						let mut chosen_idx = 0;
-						for (i, rnk) in exp_ranks.into_iter().enumerate() {
+						for (i, &rnk) in exp_ranks.iter().enumerate() {
 					    	chosen_idx = i;
 						    if v <= rnk {
 						    	break; 
@@ -74,6 +76,7 @@ impl Constructor {
 //					println!("refs = {:?}", refs);
 //					println!("partition = {:?}", partition.incl);
 					refs = Constructor::filter_indices(refs, &partition.incl);
+					exp_ranks = Constructor::filter_indices(exp_ranks, &partition.incl);
 					
 					// 3. append the move to the seq
 					best_seq.push(ChosenMove(chosen_idx as u32, mv, partition));
@@ -108,9 +111,11 @@ impl Constructor {
 			for &ChosenMove(idx, _, ref partition) in seq {
 				let idx = idx as usize;
 				refs_[idx].rank += NRPA_ALPHA;
-				let z = moves.iter().fold(0., |acc, mv| acc + mv.rank.exp());
+				
+				let exp_ranks : Vec<f32> = moves.iter().map(|mv| mv.rank.exp()).collect();
+				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 				for i in 0..refs_.len() {
-					refs_[i].rank -= NRPA_ALPHA * moves[i].rank.exp() / z;
+					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
 				}
 				
 				moves = Constructor::filter_indices(moves, &partition.incl);
