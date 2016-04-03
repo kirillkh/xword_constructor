@@ -1,23 +1,24 @@
 use rand::distributions::{IndependentSample, Range};
 use rand::XorShiftRng;
 
-use common::{dim, Placement, make_rng};
+use common::{dim, Placement, make_rng, filter_indices};
 use fastmath::fastexp;
 use board::{Board, Eff};
 
 
 //const NRPA_LEVEL: u8 = 1;
 //const NRPA_ITERS: u32 = 15500;
-//const NRPA_LEVEL: u8 = 2;
-//const NRPA_ITERS: u32 = 125;
+const NRPA_LEVEL: u8 = 2;
+const NRPA_ITERS: u32 = 400;
 //const NRPA_LEVEL: u8 = 3;
-//const NRPA_ITERS: u32 = 25;
+//const NRPA_ITERS: u32 = 55;
 //const NRPA_LEVEL: u8 = 4;
 //const NRPA_ITERS: u32 = 11;
-const NRPA_LEVEL: u8 = 4;
-const NRPA_ITERS: u32 = 20;
+//const NRPA_LEVEL: u8 = 4;
+//const NRPA_ITERS: u32 = 20;
 
 const NRPA_ALPHA: f32 = 2.71828;
+//const NRPA_ALPHA: f32 = 1.;
 
 
 
@@ -76,8 +77,8 @@ impl Constructor {
 					let partition = Constructor::partition_compat(mv.clone(), &refs);
 //					println!("refs = {:?}", refs);
 //					println!("partition = {:?}", partition.incl);
-					refs = Constructor::filter_indices(refs, &partition.incl);
-					exp_ranks = Constructor::filter_indices(exp_ranks, &partition.incl);
+					refs = filter_indices(refs, &partition.incl);
+					exp_ranks = filter_indices(exp_ranks, &partition.incl);
 					
 					// 3. append the move to the seq
 					best_seq.push(ChosenMove(chosen_idx as u32, mv, partition));
@@ -85,12 +86,14 @@ impl Constructor {
 			}
 			
 			self.fixup_board(best_seq)
+//			(best_seq, Eff(0))
 		} else {
 			let mut moves : Vec<RankedMove> = moves.to_vec();
 			for _ in 0..NRPA_ITERS {
 				let (new_seq, new_eff) = self.nrpa(level - 1, &moves);
 				if new_seq.len() > best_seq.len() || 
 				   (new_seq.len() == best_seq.len() && *new_eff >= *best_eff) 
+//				if new_seq.len() as u32 + *new_eff >= best_seq.len() as u32 + *best_eff 
 				{
 					best_seq = new_seq;
 					best_eff = new_eff;
@@ -118,8 +121,8 @@ impl Constructor {
 					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
 				}
 				
-				moves = Constructor::filter_indices(moves, &partition.incl);
-				refs_ = Constructor::filter_indices(refs_, &partition.incl);
+				moves = filter_indices(moves, &partition.incl);
+				refs_ = filter_indices(refs_, &partition.incl);
 			}
 		}
 		
@@ -127,34 +130,31 @@ impl Constructor {
 	}
 	
 	
-	fn fixup_board<Move: AsRef<Placement>> (&mut self, seq: Vec<Move>) -> (Vec<Move>, Eff) {
-		#[derive(Clone)]
-		struct IndexedMove<'a> {
-			place: &'a Placement,
-			moves_idx: usize,
-		}
-		
-		impl<'a> AsRef<Placement> for IndexedMove<'a> {
-			fn as_ref(&self) -> &Placement { &self.place }
-		}
+	fn fixup_board<Move: AsRef<Placement>+Clone> (&mut self, seq: Vec<Move>) -> (Vec<Move>, Eff) {
+//		let fixed_indices: Vec<usize>;
+//		let eff: Eff;
+//		{
+//			// TODO: this may be expensive, might need to cache
+//			let mut board = Board::new(self.h, self.w, &mut self.rng);
+//			
+//			for (i, mv) in seq.iter().enumerate() {
+//				let idxmv = IndexedMove { place: mv.as_ref(), moves_idx: i };
+//				board.place(idxmv); 
+//			}
+//			
+//			let fixed : Vec<IndexedMove> = board.fixup_adjacent();
+//			fixed_indices = fixed.into_iter().map(|idxmv| idxmv.moves_idx).collect();
+//			eff = board.efficiency();
+//		};
 //		
-		let fixed_indices: Vec<usize>;
-		let eff: Eff;
-		{
-			// TODO: this may be expensive, might need to cache
-			let mut board = Board::new(self.h, self.w, &mut self.rng);
-			
-			for (i, mv) in seq.iter().enumerate() {
-				let idxmv = IndexedMove { place: mv.as_ref(), moves_idx: i };
-				board.place(idxmv); 
-			}
-			
-			let fixed : Vec<IndexedMove> = board.fixup_adjacent();
-			fixed_indices = fixed.into_iter().map(|idxmv| idxmv.moves_idx).collect();
-			eff = board.efficiency();
-		};
+//		(filter_indices(seq, &fixed_indices), eff)
+
+		let mut board = Board::new(self.h, self.w, &mut self.rng);
+		board.place(seq);
+		let fixed : Vec<Move> = board.fixup_adjacent();
+		let eff = board.efficiency();
 		
-		(Constructor::filter_indices(seq, &fixed_indices), eff)
+		(fixed, eff)
 	}
 	
 	
@@ -176,40 +176,6 @@ impl Constructor {
 		
 		partition
 	}
-	
-
-	fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> Vec<T> {
-//		let mut keep = vec![ false; items.len() ];
-//		for &index in indices {
-//		    keep[index] = true;
-//		}
-//
-//		let mut out = Vec::with_capacity(items.len());
-//		for (i, item) in items.into_iter().enumerate() {
-//			if keep[i] {
-//				out.push(item)
-//			}
-//		}
-//		
-//		out
-
-		let mut keep = vec![ false; items.len() ];
-		for &index in indices {
-		    keep[index] = true;
-		}
-
-		let mut j = 0;
-		for i in 0..items.len() {
-			if keep[i] {
-				if i!=j {
-					items.swap(j, i);
-				}
-				j += 1;
-			}
-		}
-		items.truncate(j);
-		items
-	}
 }
 
 
@@ -226,11 +192,14 @@ impl AsRef<Placement> for RankedMove {
 }
 
 
+// TODO: this is bad
+#[derive(Clone)]
 struct Partition { incl: Vec<usize>,
 //	 excl: Vec<usize> 
 }
 
 
+#[derive(Clone)]
 struct ChosenMove(u32, RankedMove, Partition);
 
 impl AsRef<Placement> for ChosenMove {

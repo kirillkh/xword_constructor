@@ -100,9 +100,10 @@ fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
 	}
 
 	
-	for mv in seq.iter() {
-		board.place(mv); 
-	}
+//	for mv in seq.iter() {
+//		board.place(mv); 
+//	}
+	board.place(seq.iter().collect());
 	
 	for i in 0..h {
 		for j in 0..w {

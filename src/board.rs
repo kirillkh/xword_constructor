@@ -1,7 +1,7 @@
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 use ndarray::OwnedArray;
-use common::{dim, Placement, PlacementId, MatrixDim};
+use common::{dim, Placement, PlacementId, MatrixDim, filter_indices};
 
 use rand::distributions::{IndependentSample, Range};
 use rand::XorShiftRng;
@@ -28,6 +28,7 @@ impl Deref for Eff {
 #[derive(Clone)]
 pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 	pub mv: Move,
+	moves_idx: usize,
 	dependants: Vec<PlacementId>
 }
 
@@ -45,16 +46,19 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new(), rng:rng }
 	}
 	
-	pub fn place(&mut self, mv: Move) {
-		let bmv = BoardMove{ mv: mv, dependants: vec![] };
-		let place_id = {
-			let place = bmv.mv.as_ref();
-			place.fold_positions((), |_, x, y| {
-				self.field[MatrixDim(x, y)].push(place.id);
-			});
-			place.id
-		};
-		self.moves.insert(place_id, bmv);
+	pub fn place(&mut self, seq: Vec<Move>) {
+		for (i, mv) in seq.into_iter().enumerate() {
+			let place_id = {
+				let place = mv.as_ref();
+				place.fold_positions((), |_, x, y| {
+					self.field[MatrixDim(x, y)].push(place.id);
+				});
+				place.id
+			};
+			let bmv = BoardMove { mv:mv, moves_idx: i, dependants: vec![] };
+			
+			self.moves.insert(place_id, bmv);
+		}
 	}
 	
 	
@@ -140,7 +144,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		while !adjacencies.is_empty() {
 			let mut adj_vec : Vec<_> = adjacencies.into_iter().collect();
 			if cfg!(feature = "debug_rng") {
-				adj_vec.sort();
+//				adj_vec.sort();
 			}
 			adjacencies = adj_vec.into_iter().flat_map(|adj| {
 					let v = between.ind_sample(self.rng);
@@ -165,7 +169,16 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 			adjacencies = self.find_adjacencies(suspects);
 		};
 		
-		self.moves.iter().map(|(_, bmv)| bmv.mv.clone()).collect()
+		let mut fixed : Vec<_> = self.moves.values().cloned().collect();
+		fixed.sort_by(|bmv1, bmv2| bmv1.moves_idx.cmp(&bmv2.moves_idx));
+		fixed.into_iter().map(|bmv| bmv.mv).collect()
+//		
+//		let (fixed_moves, fixed_indices) : (Vec<_>, Vec<_>) = 
+//			fixed.into_iter()
+//			.map(|bmv| (bmv.mv, bmv.moves_idx))
+//			.unzip();
+//		
+//		filter_indices(fixed_moves, &fixed_indices)
 	}
 	
 	
@@ -204,6 +217,17 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	}
 }
 
+
+
+//#[derive(Clone)]
+//struct IndexedMove<'a> {
+//	place: &'a Placement,
+//	moves_idx: usize,
+//}
+//
+//impl<'a> AsRef<Placement> for IndexedMove<'a> {
+//	fn as_ref(&self) -> &Placement { &self.place }
+//}
 
 
 

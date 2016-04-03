@@ -267,3 +267,37 @@ pub fn make_rng() -> XorShiftRng {
 	let seed: [u32;4] = [1, 2, 3, 4];
 	XorShiftRng::from_seed(seed)
 }
+
+
+pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> Vec<T> {
+//		let mut keep = vec![ false; items.len() ];
+//		for &index in indices {
+//		    keep[index] = true;
+//		}
+//
+//		let mut out = Vec::with_capacity(items.len());
+//		for (i, item) in items.into_iter().enumerate() {
+//			if keep[i] {
+//				out.push(item)
+//			}
+//		}
+//		
+//		out
+
+	let mut keep = vec![ false; items.len() ];
+	for &index in indices {
+	    keep[index] = true;
+	}
+
+	let mut j = 0;
+	for i in 0..items.len() {
+		if keep[i] {
+			if i!=j {
+				items.swap(j, i);
+			}
+			j += 1;
+		}
+	}
+	items.truncate(j);
+	items
+}
