@@ -19,6 +19,7 @@ use self::constructor::Constructor;
 mod board;
 mod common;
 mod constructor;
+mod fastmath;
 
 fn main() {
     

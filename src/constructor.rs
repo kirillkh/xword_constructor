@@ -2,6 +2,7 @@ use rand::distributions::{IndependentSample, Range};
 use rand::XorShiftRng;
 
 use common::{dim, Placement, make_rng};
+use fastmath::fastexp;
 use board::{Board, Eff};
 
 
@@ -47,7 +48,7 @@ impl Constructor {
 		if level == 0 {
 			{
 				let mut refs : Vec<&mut RankedMove> = moves.iter_mut().collect();
-				let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| mv.rank.exp()).collect();
+				let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| fastexp(mv.rank)).collect();
 				
 				// random rollout according to the policy
 				while !refs.is_empty() {
@@ -101,7 +102,6 @@ impl Constructor {
 		}
 	}
 	
-	
 	fn nrpa_adapt<'a>(&self, mut moves: Vec<RankedMove>, seq: &[ChosenMove]) -> Vec<RankedMove> {
 		let mut moves_ = moves.clone();
 		
@@ -112,7 +112,7 @@ impl Constructor {
 				let idx = idx as usize;
 				refs_[idx].rank += NRPA_ALPHA;
 				
-				let exp_ranks : Vec<f32> = moves.iter().map(|mv| mv.rank.exp()).collect();
+				let exp_ranks : Vec<f32> = moves.iter().map(|mv| fastexp(mv.rank)).collect();
 				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 				for i in 0..refs_.len() {
 					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
