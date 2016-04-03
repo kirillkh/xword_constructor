@@ -138,7 +138,11 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 //		let mut rng = rand::thread_rng();
 
 		while !adjacencies.is_empty() {
-			adjacencies = adjacencies.into_iter().flat_map(|adj| {
+			let mut adj_vec : Vec<_> = adjacencies.into_iter().collect();
+			if cfg!(feature = "debug_rng") {
+				adj_vec.sort();
+			}
+			adjacencies = adj_vec.into_iter().flat_map(|adj| {
 					let v = between.ind_sample(self.rng);
 					
 					let out : Vec<_> = 
