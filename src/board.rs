@@ -1,16 +1,18 @@
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use ndarray::OwnedArray;
-use common::{dim, Placement, PlacementId, MatrixDim, filter_indices};
+use common::{dim, Placement, PlacementId, MatrixDim, filter_indices, Orientation, MyRng};
 
 use rand::distributions::{IndependentSample, Range};
-use rand::XorShiftRng;
+use rand::Rng;
 
 
 //---- Eff -----------------------------------------------------------------------------
 #[allow(non_camel_case_types)]
 pub type eff_t = u32;
 
+#[derive(Debug)]
 pub struct Eff(pub eff_t);
 
 impl Deref for Eff {
@@ -38,11 +40,11 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 pub struct Board<'a, Move: AsRef<Placement>+Clone> {
 	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
 	pub moves: HashMap<PlacementId, BoardMove<Move>>,
-	rng: &'a mut XorShiftRng
+	rng: &'a mut MyRng
 }
 
 impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
-	pub fn new(h: dim, w: dim, rng: &'a mut XorShiftRng) -> Board<Move> {
+	pub fn new(h: dim, w: dim, rng: &'a mut MyRng) -> Board<'a, Move> {
 		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new(), rng:rng }
 	}
 	
@@ -147,7 +149,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 //				adj_vec.sort();
 			}
 			adjacencies = adj_vec.into_iter().flat_map(|adj| {
-					let v = between.ind_sample(self.rng);
+					let v = self.rng.gen_usize(between);
 					
 					let out : Vec<_> = 
 						if v==0 {
@@ -214,6 +216,31 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		}).collect();
 		
 		adjacencies
+	}
+	
+
+	pub fn print(&self) {
+		let field = &self.field;
+		for i in 0..field.dim()[0] {
+			for j in 0..field.dim()[1] {
+				let opt_pid = field[MatrixDim(j, i)].first();
+				if let Some(pid) = opt_pid {
+						let plc = &self.moves[pid].mv.as_ref();
+						
+						match plc.orientation {
+							Orientation::HOR =>
+								print!("{}", plc.word.str[j - plc.x] as char),
+							Orientation::VER =>
+								print!("{}", plc.word.str[i - plc.y] as char),
+						}
+				} else {
+								print!("_")
+				}
+			}
+			
+			print!("\n");
+		}
+		print!("\n");
 	}
 }
 

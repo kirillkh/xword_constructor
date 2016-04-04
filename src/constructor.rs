@@ -1,24 +1,42 @@
+use std::ops::DerefMut;
+use std::cmp::Ordering;
 use rand::distributions::{IndependentSample, Range};
-use rand::XorShiftRng;
+use rand::Rng;
 
-use common::{dim, Placement, make_rng, filter_indices};
+use common::{dim, Placement, make_rng, filter_indices, MyRng};
 use fastmath::fastexp;
 use board::{Board, Eff};
 
 
 //const NRPA_LEVEL: u8 = 1;
 //const NRPA_ITERS: u32 = 15500;
-const NRPA_LEVEL: u8 = 2;
-const NRPA_ITERS: u32 = 400;
-//const NRPA_LEVEL: u8 = 3;
-//const NRPA_ITERS: u32 = 55;
-//const NRPA_LEVEL: u8 = 4;
+
+//const NRPA_LEVEL: u8 = 2;
+//const NRPA_ITERS: u32 = 400;
+//const NRPA_ALPHA: f32 = 0.8;
+
+// GREAT RESULTS!
+const NRPA_LEVEL: u8 = 3;
+const NRPA_ITERS: u32 = 55;
+const NRPA_ALPHA: f32 = 1.;
+
+//const NRPA_LEVEL: u8 = 6;
+//const NRPA_ITERS: u32 = 7;
+//const NRPA_LEVEL: u8 = 5;
 //const NRPA_ITERS: u32 = 11;
+
+// GOOD RESULTS
 //const NRPA_LEVEL: u8 = 4;
 //const NRPA_ITERS: u32 = 20;
-
-const NRPA_ALPHA: f32 = 2.71828;
 //const NRPA_ALPHA: f32 = 1.;
+
+// OK results
+//const NRPA_LEVEL: u8 = 6;
+//const NRPA_ITERS: u32 = 7;
+//const NRPA_ALPHA: f32 = 0.9;
+
+//const NRPA_ALPHA: f32 = 1.4; // 4-5
+//const NRPA_ALPHA: f32 = 1.6; // 10+
 
 
 
@@ -26,7 +44,7 @@ const NRPA_ALPHA: f32 = 2.71828;
 pub struct Constructor {
 	pub h: dim,
 	pub w: dim,
-	rng: XorShiftRng
+	rng: Box<MyRng>
 }
 
 impl Constructor {
@@ -43,7 +61,7 @@ impl Constructor {
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
 	fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff) {
 		let mut moves = moves.to_vec();
-		let mut best_seq = vec![];
+		let mut best_seq : Vec<ChosenMove> = vec![];
 		let mut best_eff = Eff(0);
 			
 		if level == 0 {
@@ -57,7 +75,7 @@ impl Constructor {
 					let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 					let chosen_idx = {
 						let between = Range::new(0., z);
-						let mut v = between.ind_sample(&mut self.rng);
+						let mut v = self.rng.gen_f32(between);
 						
 						let mut chosen_idx = 0;
 						for (i, &rnk) in exp_ranks.iter().enumerate() {
@@ -91,15 +109,41 @@ impl Constructor {
 			let mut moves : Vec<RankedMove> = moves.to_vec();
 			for _ in 0..NRPA_ITERS {
 				let (new_seq, new_eff) = self.nrpa(level - 1, &moves);
-				if new_seq.len() > best_seq.len() || 
-				   (new_seq.len() == best_seq.len() && *new_eff >= *best_eff) 
+				
+					if level == NRPA_LEVEL {
+						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.id, mv.rank)).collect();
+						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+						let skip = ranks.len()-20;
+						ranks = ranks.into_iter().skip(skip).collect();
+						println!("{:?}", ranks);
+						
+						let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
+						board.place(new_seq.iter().collect());
+						board.print();
+						println!("-------------- eff {} ----------------", new_eff.0);
+					}
+					
+				
 //				if new_seq.len() as u32 + *new_eff >= best_seq.len() as u32 + *best_eff 
+				if *new_eff >= *best_eff 
 				{
 					best_seq = new_seq;
 					best_eff = new_eff;
 				}
+				
 				moves = self.nrpa_adapt(moves, &best_seq); 
 			}
+			
+			if level == NRPA_LEVEL {
+				let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.id, mv.rank)).collect();
+				ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+				ranks = ranks.into_iter().collect();
+				println!("{:?}\n", ranks);
+				
+				let mut seq : Vec<_> = best_seq.iter().map(|mv| &mv.1).collect();
+				println!("{:?}", seq);
+			}
+			
 			
 			(best_seq, best_eff)
 		}
@@ -149,12 +193,16 @@ impl Constructor {
 //		
 //		(filter_indices(seq, &fixed_indices), eff)
 
-		let mut board = Board::new(self.h, self.w, &mut self.rng);
-		board.place(seq);
-		let fixed : Vec<Move> = board.fixup_adjacent();
-		let eff = board.efficiency();
+		let mut board = Board::new(self.h, self.w, &mut *self.rng);
 		
-		(fixed, eff)
+//		board.place(seq);
+//		let fixed : Vec<Move> = board.fixup_adjacent();
+//		let eff = board.efficiency();
+//		(fixed, eff)
+
+		board.place(seq.clone());
+		let eff = board.efficiency();
+		(seq, eff)
 	}
 	
 	

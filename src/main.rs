@@ -80,7 +80,7 @@ fn main() {
     
 	let dim = problem.board.dim();
 	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
-	println!("seq = {:?}", seq);
+//	println!("seq = {:?}", seq);
 	
 	for &or in Orientation::values() {
 		println!("------- {:?} -------", or);
@@ -92,39 +92,15 @@ fn main() {
 
 fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
 	let mut rng = common::make_rng();
-	let mut board : Board<&Placement> = Board::new(h, w, &mut rng);
+	let mut board : Board<&Placement> = Board::new(h, w, &mut *rng);
 //			static mut board: Board<Move> = Board::new(self.h, self.w);
 
-	impl AsRef<Placement> for Placement {
-		fn as_ref(&self) -> &Placement { &self }
-	}
-
-	
 //	for mv in seq.iter() {
 //		board.place(mv); 
 //	}
 	board.place(seq.iter().collect());
 	
-	for i in 0..h {
-		for j in 0..w {
-			let opt_pid = board.field[MatrixDim(j, i)].first();
-			if let Some(pid) = opt_pid {
-					let plc = &board.moves[pid];
-					
-					let mv = &plc.mv;
-					match mv.orientation {
-						Orientation::HOR =>
-							print!("{}", mv.word.str[j - mv.x] as char),
-						Orientation::VER =>
-							print!("{}", mv.word.str[i - mv.y] as char),
-					}
-			} else {
-							print!("_")
-			}
-		}
-		
-		print!("\n");
-	}
+	board.print();
 }
 
 fn gen_placements(problem: &Problem) -> Vec<Placement> {
