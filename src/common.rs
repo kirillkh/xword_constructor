@@ -1,7 +1,7 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, Deref};
 use std::rc::Rc;
-use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix};
+use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, OwnedArray};
 use rand::{SeedableRng, XorShiftRng, Rng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 
@@ -9,7 +9,7 @@ use rand::distributions::{IndependentSample, Range};
 pub type dim = Ix;
 
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MatrixDim(pub dim, pub dim);
 
 impl MatrixDim {
@@ -177,16 +177,16 @@ impl Placement {
 		let (len0, len1) = (self.word.len(), other.word.len());
 		
 		if other.orientation == self.orientation {
-//				u0 + len0	< u1 || u1 + len1	< u0 // other is right or left + gap
-				u0 + len0	<= u1 || u1 + len1	<= u0 // other is right or left
+				u0 + len0	< u1 || u1 + len1	< u0 // other is right or left + gap
+//				u0 + len0	<= u1 || u1 + len1	<= u0 // other is right or left
 			||	v0 != v1							 // other is below or above
 		} else {
-//				v0 + 1 		< v1 || v1 + len1	< v0 // other is below or above + gap
-//			||	u0 + len0	< u1 || u1 + 1		< u0 // other is right or left + gap
-				v0 + 1 		<= v1 || v1 + len1	<= v0 // other is below or above
+				v0 + 1 		< v1 || v1 + len1	< v0 // other is below or above + gap
+			||	u0 + len0	< u1 || u1 + 1		< u0 // other is right or left + gap
+//				v0 + 1 		<= v1 || v1 + len1	<= v0 // other is below or above
 			||	u0 + len0	<= u1 || u1 + 1		<= u0 // other is right or left
 			||	(									 // intersection
-//				(u0 <= u1 && u1+1 <= u0+len0) && (v1 <= v0 && v0+1 <= v1+len1) &&
+				(u0 <= u1 && u1+1 <= u0+len0) && (v1 <= v0 && v0+1 <= v1+len1) &&
 				self.word[u1-u0] == other.word[v0-v1]
 			)
 		}
@@ -196,6 +196,21 @@ impl Placement {
 impl AsRef<Placement> for Placement {
 	fn as_ref(&self) -> &Placement { &self }
 }
+
+
+//---- Problem -------------------------------------------------------------------------
+
+pub struct Problem {
+	pub dic: Vec<Word>,
+	pub board: OwnedArray<bool, MatrixDim>,
+}
+
+impl Problem {
+	pub fn new(dic: Vec<Word>, board: OwnedArray<bool, MatrixDim>) -> Problem {
+		Problem { dic:dic, board:board }
+	}
+}
+
 
 
 //---- Cond ----------------------------------------------------------------------------
@@ -272,15 +287,16 @@ mod tests {
 
 
     
-pub trait MyRng {
+pub trait AbstractRng {
     fn gen_f32(&mut self, between: Range<f32>) -> f32;
     fn gen_usize(&mut self, between: Range<usize>) -> usize;
+    fn gen_u8(&mut self, between: Range<u8>) -> u8;
 }
 
 
 struct XRng<R: Rng>(R);
 
-impl<R: Rng> MyRng for XRng<R> {
+impl<R: Rng> AbstractRng for XRng<R> {
     fn gen_f32(&mut self, between: Range<f32>) -> f32 {
         between.ind_sample(&mut self.0)
     }
@@ -288,18 +304,22 @@ impl<R: Rng> MyRng for XRng<R> {
     fn gen_usize(&mut self, between: Range<usize>) -> usize {
         between.ind_sample(&mut self.0)
     }
+    
+    fn gen_u8(&mut self, between: Range<u8>) -> u8 {
+        between.ind_sample(&mut self.0)
+    }
 }
 
 
 
-pub fn make_rng() -> Box<MyRng> {
+pub fn make_rng() -> Box<AbstractRng> {
 //	let seed: [u32;4] = [1, 2, 3, 555];
 //	Box::new(XRng(XorShiftRng::from_seed(seed)))
 	Box::new(XRng(thread_rng()))
 }
 
 
-pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> Vec<T> {
+pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> (Vec<T>, Vec<T>) {
 //		let mut keep = vec![ false; items.len() ];
 //		for &index in indices {
 //		    keep[index] = true;
@@ -328,6 +348,8 @@ pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> Vec<T> {
 			j += 1;
 		}
 	}
-	items.truncate(j);
-	items
+//	items.truncate(j);
+//	items
+	let excl = items.split_off(j);
+	(items, excl)
 }

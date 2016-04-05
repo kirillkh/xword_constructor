@@ -1,6 +1,7 @@
+extern crate xword;
+extern crate regex;
 extern crate ndarray;
 extern crate rand;
-extern crate regex;
 
 use std::str;
 use std::error::Error;
@@ -12,14 +13,8 @@ use regex::bytes::Regex;
 
 use ndarray::{OwnedArray, Axis};
 
-use self::board::Board;
-use self::common::{dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim};
-use self::constructor::Constructor;
-
-mod board;
-mod common;
-mod constructor;
-mod fastmath;
+use xword::{Board, Constructor, dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim, Problem};
+use xword::util;
 
 fn main() {
     
@@ -79,7 +74,7 @@ fn main() {
     
     
 	let dim = problem.board.dim();
-	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
+	let seq = Constructor::new(dim.1, dim.0).construct(&placements);
 //	println!("seq = {:?}", seq);
 	
 	for &or in Orientation::values() {
@@ -91,7 +86,7 @@ fn main() {
 
 
 fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
-	let mut rng = common::make_rng();
+	let mut rng = util::make_rng();
 	let mut board : Board<&Placement> = Board::new(h, w, &mut *rng);
 //			static mut board: Board<Move> = Board::new(self.h, self.w);
 
@@ -112,7 +107,7 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 	let board = &problem.board;
 	let mut placement_id = 0;
 	for &orientation in Orientation::values().iter() {
-		let axis = 1-orientation as usize;
+		let axis = orientation as usize;
 		for i in 0 .. board.dim()[axis] {
 			let line = board.subview(Axis(axis), i as usize);
 			let mut run_len = 0;
@@ -172,13 +167,8 @@ fn read_problem() -> Vec<u8> {
 } 
 
 
-struct Problem {
-	dic: Vec<Word>,
-	board: OwnedArray<bool, MatrixDim>,
-}
-
 fn parse(bytes: Vec<u8>) -> Problem {
-	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})\n((?:[_#]+\n)+)-----((?:\n[a-z]+)+)\n*$").unwrap();
+	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})[\r\n]+((?:[_#]+[\r\n]{1,2})+)-----((?:[\r\n]{1,2}[a-z]+)+)[\r\n]*$").unwrap();
 	let caps = re.captures(&bytes).unwrap();
 	
 	let h = str::from_utf8(caps.at(1).unwrap()).unwrap().parse::<dim>().unwrap();
@@ -196,18 +186,18 @@ fn parse(bytes: Vec<u8>) -> Problem {
     	id += 1;
     }
 	
-	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
+	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(w, h));
 	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
     for (i, cap) in re.captures_iter(board_str).enumerate() {
     	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
     		let (i, j) = (i as dim, j as dim);
     		match c {
-    			b'_' => board[MatrixDim(i, j)] = true,
-    			b'#' => board[MatrixDim(i, j)] = false,
+    			b'_' => board[MatrixDim(j, i)] = true,
+    			b'#' => board[MatrixDim(j, i)] = false,
     			_    => panic!("unexpected char: {}", c)
     		}
     	}
     }
     
-    Problem { dic: dic, board: board }
+    Problem::new(dic, board)
 }

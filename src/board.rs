@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use ndarray::OwnedArray;
-use common::{dim, Placement, PlacementId, MatrixDim, filter_indices, Orientation, MyRng};
+use common::{dim, Placement, PlacementId, MatrixDim, filter_indices, Orientation, AbstractRng};
 
 use rand::distributions::{IndependentSample, Range};
 use rand::Rng;
@@ -40,11 +40,11 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 pub struct Board<'a, Move: AsRef<Placement>+Clone> {
 	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
 	pub moves: HashMap<PlacementId, BoardMove<Move>>,
-	rng: &'a mut MyRng
+	rng: &'a mut AbstractRng
 }
 
 impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
-	pub fn new(h: dim, w: dim, rng: &'a mut MyRng) -> Board<'a, Move> {
+	pub fn new(h: dim, w: dim, rng: &'a mut AbstractRng) -> Board<'a, Move> {
 		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new(), rng:rng }
 	}
 	
@@ -221,17 +221,17 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 
 	pub fn print(&self) {
 		let field = &self.field;
-		for i in 0..field.dim()[0] {
-			for j in 0..field.dim()[1] {
-				let opt_pid = field[MatrixDim(j, i)].first();
+		for j in 0..field.dim()[1] {
+			for i in 0..field.dim()[0] {
+				let opt_pid = field[MatrixDim(i, j)].first();
 				if let Some(pid) = opt_pid {
 						let plc = &self.moves[pid].mv.as_ref();
 						
 						match plc.orientation {
 							Orientation::HOR =>
-								print!("{}", plc.word.str[j - plc.x] as char),
+								print!("{}", plc.word.str[i - plc.x] as char),
 							Orientation::VER =>
-								print!("{}", plc.word.str[i - plc.y] as char),
+								print!("{}", plc.word.str[j - plc.y] as char),
 						}
 				} else {
 								print!("_")

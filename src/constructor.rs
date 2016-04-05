@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use rand::distributions::{IndependentSample, Range};
 use rand::Rng;
 
-use common::{dim, Placement, make_rng, filter_indices, MyRng};
+use common::{dim, Placement, make_rng, filter_indices, AbstractRng};
 use fastmath::fastexp;
 use board::{Board, Eff};
 
@@ -15,13 +15,25 @@ use board::{Board, Eff};
 //const NRPA_ITERS: u32 = 400;
 //const NRPA_ALPHA: f32 = 0.8;
 
+//const NRPA_LEVEL: u8 = 2;
+//const NRPA_ITERS: u32 = 400;
+//const NRPA_ALPHA: f32 = 0.125;
+
 // GREAT RESULTS!
+//const NRPA_LEVEL: u8 = 3;
+//const NRPA_ITERS: u32 = 55;
+//const NRPA_ALPHA: f32 = 0.5;
+
 const NRPA_LEVEL: u8 = 3;
-const NRPA_ITERS: u32 = 55;
+const NRPA_ITERS: u32 = 100;
 const NRPA_ALPHA: f32 = 1.;
+
 
 //const NRPA_LEVEL: u8 = 6;
 //const NRPA_ITERS: u32 = 7;
+//const NRPA_ALPHA: f32 = 2.;
+
+
 //const NRPA_LEVEL: u8 = 5;
 //const NRPA_ITERS: u32 = 11;
 
@@ -44,7 +56,7 @@ const NRPA_ALPHA: f32 = 1.;
 pub struct Constructor {
 	pub h: dim,
 	pub w: dim,
-	rng: Box<MyRng>
+	rng: Box<AbstractRng>
 }
 
 impl Constructor {
@@ -95,8 +107,10 @@ impl Constructor {
 					let partition = Constructor::partition_compat(mv.clone(), &refs);
 //					println!("refs = {:?}", refs);
 //					println!("partition = {:?}", partition.incl);
-					refs = filter_indices(refs, &partition.incl);
-					exp_ranks = filter_indices(exp_ranks, &partition.incl);
+					let (r, _) = filter_indices(refs, &partition.incl);
+					refs = r;
+					let (e, _) = filter_indices(exp_ranks, &partition.incl);
+					exp_ranks = e;
 					
 					// 3. append the move to the seq
 					best_seq.push(ChosenMove(chosen_idx as u32, mv, partition));
@@ -113,7 +127,7 @@ impl Constructor {
 					if level == NRPA_LEVEL {
 						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.id, mv.rank)).collect();
 						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-						let skip = ranks.len()-20;
+						let skip = if ranks.len()<=40 { 0 } else { ranks.len()-20 };
 						ranks = ranks.into_iter().skip(skip).collect();
 						println!("{:?}", ranks);
 						
@@ -125,13 +139,32 @@ impl Constructor {
 					
 				
 //				if new_seq.len() as u32 + *new_eff >= best_seq.len() as u32 + *best_eff 
-				if *new_eff >= *best_eff 
-				{
+				if *new_eff > *best_eff {
 					best_seq = new_seq;
 					best_eff = new_eff;
+				} else if best_seq.len()>0 {
+					if *new_eff == *best_eff {
+						best_seq = new_seq;
+						best_eff = new_eff;
+					}
+					
+//					let max_ranked = best_seq.iter().fold((best_seq[0].1.rank, None), |(max, idx), mv| 
+//						if mv.1.rank >= max {
+//							(mv.1.rank, Some(&mv.1))
+//						} else {
+//							(max, idx)
+//						}
+//					).1.unwrap();
+//					
+//					for  mv in &mut moves {
+//						if mv.place.id == max_ranked.place.id {
+//							mv.rank -= NRPA_ALPHA;
+//							mv.rank = 0.;
+//							break;
+//						}
+//					}
 				}
-				
-				moves = self.nrpa_adapt(moves, &best_seq); 
+				moves = self.nrpa_adapt(moves, &best_seq);
 			}
 			
 			if level == NRPA_LEVEL {
@@ -155,18 +188,36 @@ impl Constructor {
 		{
 			let mut refs_ : Vec<&mut RankedMove> = moves_.iter_mut().collect();
 			
-			for &ChosenMove(idx, _, ref partition) in seq {
+			for &ChosenMove(idx, ref rnk_mv, ref partition) in seq {
 				let idx = idx as usize;
-				refs_[idx].rank += NRPA_ALPHA;
+//				refs_[idx].rank += NRPA_ALPHA;
+//				let exp_ranks : Vec<f32> = moves.iter().map(|mv| fastexp(mv.rank)).collect();
+//				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
+//				for i in 0..refs_.len() {
+//					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
+//				}
+//				
+//				let (m, _) = filter_indices(moves, &partition.incl);
+//				moves = m;
+//				let (r, _) = filter_indices(refs_, &partition.incl);
+//				refs_ = r;
+
 				
-				let exp_ranks : Vec<f32> = moves.iter().map(|mv| fastexp(mv.rank)).collect();
+//				refs_[idx].rank += NRPA_ALPHA;
+				let chosen_id = rnk_mv.place.id;
+				let (mut incl, mut excl) = filter_indices(refs_, &partition.incl);
+				let exp_ranks : Vec<f32> = excl.iter().map(|mv| fastexp(mv.rank)).collect();
 				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
-				for i in 0..refs_.len() {
-					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
+				for i in 0..excl.len() {
+					excl[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
+					if excl[i].place.id == chosen_id {
+						excl[i].rank += NRPA_ALPHA;
+					}
 				}
+				refs_ = incl;
 				
-				moves = filter_indices(moves, &partition.incl);
-				refs_ = filter_indices(refs_, &partition.incl);
+				let (m, _) = filter_indices(moves, &partition.incl);
+				moves = m;
 			}
 		}
 		
@@ -195,14 +246,14 @@ impl Constructor {
 
 		let mut board = Board::new(self.h, self.w, &mut *self.rng);
 		
-//		board.place(seq);
-//		let fixed : Vec<Move> = board.fixup_adjacent();
-//		let eff = board.efficiency();
-//		(fixed, eff)
-
-		board.place(seq.clone());
+		board.place(seq);
+		let fixed : Vec<Move> = board.fixup_adjacent();
 		let eff = board.efficiency();
-		(seq, eff)
+		(fixed, eff)
+
+//		board.place(seq.clone());
+//		let eff = board.efficiency();
+//		(seq, eff)
 	}
 	
 	
@@ -210,13 +261,13 @@ impl Constructor {
 	
 	fn partition_compat<'a> (mv: RankedMove, refs: &Vec<&'a mut RankedMove>) -> Partition {
 		let init = Partition { incl: Vec::with_capacity(refs.len()), 
-//							   excl: Vec::with_capacity(refs.len()) 
+							   excl: Vec::with_capacity(refs.len()) 
 		};
 		let partition = refs.iter().enumerate().fold(init, |mut acc, (i, other)| {
 				if mv.place.compatible(&other.place) {
 					acc.incl.push(i);
 				} else {
-//					acc.excl.push(i);
+					acc.excl.push(i);
 				}
 				
 				acc
@@ -242,8 +293,9 @@ impl AsRef<Placement> for RankedMove {
 
 // TODO: this is bad
 #[derive(Clone)]
-struct Partition { incl: Vec<usize>,
-//	 excl: Vec<usize> 
+struct Partition { 
+	incl: Vec<usize>,
+	excl: Vec<usize> 
 }
 
 
