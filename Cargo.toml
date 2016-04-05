@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "xword"
-path = "src/main.rs"
+path = "src/bin/main.rs"
 
 [[bin]]
 name = "probgen"

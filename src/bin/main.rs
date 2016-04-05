@@ -6,7 +6,7 @@ extern crate rand;
 use std::str;
 use std::error::Error;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Read;
 use std::path::Path;
 
 use regex::bytes::Regex;
