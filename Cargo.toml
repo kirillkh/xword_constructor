@@ -1,12 +1,20 @@
 [package]
-
 name = "xword_constructor"
 version = "0.0.1"
 authors = [ "Kirill Khazan <kirillkh@gmail.com>" ]
 
-[[bin]]
-
+[lib]
 name = "xword"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xword"
+path = "src/main.rs"
+
+[[bin]]
+name = "probgen"
+path = "src/bin/problem_gen.rs"
+
 
 [dependencies]
 ndarray = "0.4"
