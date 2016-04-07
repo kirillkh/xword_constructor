@@ -181,10 +181,19 @@ impl Placement {
 //				u0 + len0	<= u1 || u1 + len1	<= u0 // other is right or left
 			||	v0 != v1							 // other is below or above
 		} else {
-				v0 + 1 		< v1 || v1 + len1	< v0 // other is below or above + gap
-			||	u0 + len0	< u1 || u1 + 1		< u0 // other is right or left + gap
+//				v0 + 1 		< v1 || v1 + len1	< v0 // other is below or above + gap
+//			||	u0 + len0	< u1 || u1 + 1		< u0 // other is right or left + gap
+
+			!(
+					(v1 <= v0 + 1	&& v0		<= v1 + len1 &&	// other contains or touches self vertically
+					 u0 <= u1		&& u1 + 1 	<= u0 + len0) 	// other contains self horizontally
+				||	(v1 <= v0 && v0 + 1 <= v1 + len1 && 		// other contains self vertically
+					 (u1 + 1 == u0 || u0 + len0 == u1))			// other touches self horizontally
+			)
+
+				
 //				v0 + 1 		<= v1 || v1 + len1	<= v0 // other is below or above
-			||	u0 + len0	<= u1 || u1 + 1		<= u0 // other is right or left
+//			||	u0 + len0	<= u1 || u1 + 1		<= u0 // other is right or left
 			||	(									 // intersection
 				(u0 <= u1 && u1+1 <= u0+len0) && (v1 <= v0 && v0+1 <= v1+len1) &&
 				self.word[u1-u0] == other.word[v0-v1]
