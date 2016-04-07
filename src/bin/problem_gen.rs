@@ -66,7 +66,7 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 	let mut dic : Vec<Word> = vec![];
 	
 	let mut add_word = |dic: &mut Vec<_>, line: &ArrayView<_, _>, from, to| {
-		if to - from > 0 {
+		if to - from > 1 {
 			let v : Vec<u8> = line.iter()
 				.skip(from)
 				.take(to-from)
