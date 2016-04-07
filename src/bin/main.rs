@@ -24,7 +24,8 @@ fn main() {
     
     let placements = gen_placements(&problem);
     
-    println!("DIC={:?}", problem.dic);
+    let dic_str : Vec<_> = problem.dic.iter().map(|word| (word.id, String::from_utf8_lossy(&*word.str))).collect();
+    println!("DIC={:?}", dic_str);
 //    println!("PLACEMENTS: {:?}", placements);
     
     
@@ -80,7 +81,7 @@ fn main() {
 	for &or in Orientation::values() {
 		println!("------- {:?} -------", or);
 		let moves = seq.iter().cloned().filter(|place| place.orientation == or).collect();
-		print_board(dim.0, dim.1, moves);
+		print_board(dim.1, dim.0, moves);
 	}
 }
 
