@@ -45,15 +45,15 @@ pub struct Board<'a, Move: AsRef<Placement>+Clone> {
 
 impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	pub fn new(h: dim, w: dim, rng: &'a mut AbstractRng) -> Board<'a, Move> {
-		Board { field: OwnedArray::default(MatrixDim(w, h)), moves: HashMap::new(), rng:rng }
+		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng }
 	}
 	
 	pub fn place(&mut self, seq: Vec<Move>) {
 		for (i, mv) in seq.into_iter().enumerate() {
 			let place_id = {
 				let place = mv.as_ref();
-				place.fold_positions((), |_, x, y| {
-					self.field[MatrixDim(x, y)].push(place.id);
+				place.fold_positions((), |_, y, x| {
+					self.field[MatrixDim(y, x)].push(place.id);
 				});
 				place.id
 			};
@@ -68,8 +68,8 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		let bmv = self.moves.remove(&id);
 		if let Some(ref bmv) = bmv {
 			let place = bmv.mv.as_ref();
-			place.fold_positions((), |_, x, y| {
-					let items = &mut self.field[MatrixDim(x, y)];
+			place.fold_positions((), |_, y, x| {
+					let items = &mut self.field[MatrixDim(y, x)];
 					if items.len() == 0 {
 					} else if items.len() == 1 || items[0] == id {
 						items.swap_remove(0);
@@ -88,8 +88,8 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	pub fn efficiency(&self) -> Eff {
 		let intersections = self.moves.values().fold(0, |acc, bmv| { 
 				let place = bmv.mv.as_ref();
-				place.fold_positions(acc, |acc, x, y| {
-					acc + self.field[MatrixDim(x, y)].len() - 1
+				place.fold_positions(acc, |acc, y, x| {
+					acc + self.field[MatrixDim(y, x)].len() - 1
 				})
 		}) as u32;
 		
@@ -109,8 +109,8 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		for (&id, bmv) in self.moves.iter() {
 			let init = AdjacencyTracker { last_isection: None, added_last: false };
 			let place = bmv.mv.as_ref();
-			place.fold_positions(init, |adjacency, x, y| {
-				let placements = &self.field[MatrixDim(x, y)];
+			place.fold_positions(init, |adjacency, y, x| {
+				let placements = &self.field[MatrixDim(y, x)];
 				if placements.len() == 2 {
 					let other_id = 
 						if placements[0] == id { placements[1] } 
@@ -189,22 +189,22 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	{
 		let adjacencies : HashSet<PlacementId> = suspect_moves.filter_map(|bmv| {
 			let place = bmv.mv.as_ref();
-			let perp = place.orientation.align(0, 1);
-			let adj_found = place.fold_positions(false, |acc, x, y|
+			let perp = place.orientation.align(1, 0);
+			let (yd, xd) = (perp.0 as isize, perp.1 as isize);
+			let adj_found = place.fold_positions(false, |acc, y, x|
 				acc || {
 					// if there is an intersection at (x,y), it is impossible to have adjacency problems with the neighbours
-					if self.field[MatrixDim(x, y)].len() == 2 {
+					if self.field[MatrixDim(y, x)].len() == 2 {
 						return false;
 					}
 					
 					// otherwise do the neighbour check
-					let (x, y) = (x as isize, y as isize);
-					let (xd, yd) = (perp.0 as isize, perp.1 as isize);
-					let (x1, y1) = (x + xd, y + yd);
-					let (x2, y2) = (x - xd, y - yd);
+					let (y, x) = (y as isize, x as isize);
+					let (y1, x1) = (y + yd, x + xd);
+					let (y2, x2) = (y - yd, x - xd);
 					let neighbours = [
-						self.field.get(MatrixDim(x1 as dim, y1 as dim)) as Option<&Vec<PlacementId>>,
-						self.field.get(MatrixDim(x2 as dim, y2 as dim))
+						self.field.get(MatrixDim(y1 as dim, x1 as dim)) as Option<&Vec<PlacementId>>,
+						self.field.get(MatrixDim(y2 as dim, x2 as dim))
 					];
 					
 					neighbours.iter().any(|optvec| optvec.map_or(false, |vec| vec.len()==1))
@@ -221,17 +221,17 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 
 	pub fn print(&self) {
 		let field = &self.field;
-		for j in 0..field.dim()[1] {
-			for i in 0..field.dim()[0] {
-				let opt_pid = field[MatrixDim(i, j)].first();
+		for j in 0..field.dim()[0] {
+			for i in 0..field.dim()[1] {
+				let opt_pid = field[MatrixDim(j, i)].first();
 				if let Some(pid) = opt_pid {
 						let plc = &self.moves[pid].mv.as_ref();
 						
 						match plc.orientation {
-							Orientation::HOR =>
-								print!("{}", plc.word.str[i - plc.x] as char),
 							Orientation::VER =>
 								print!("{}", plc.word.str[j - plc.y] as char),
+							Orientation::HOR =>
+								print!("{}", plc.word.str[i - plc.x] as char),
 						}
 				} else {
 								print!("_")

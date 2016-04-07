@@ -75,13 +75,13 @@ fn main() {
     
     
 	let dim = problem.board.dim();
-	let seq = Constructor::new(dim.1, dim.0).construct(&placements);
+	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
 //	println!("seq = {:?}", seq);
 	
 	for &or in Orientation::values() {
 		println!("------- {:?} -------", or);
 		let moves = seq.iter().cloned().filter(|place| place.orientation == or).collect();
-		print_board(dim.1, dim.0, moves);
+		print_board(dim.0, dim.1, moves);
 	}
 }
 
@@ -108,7 +108,7 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 	let board = &problem.board;
 	let mut placement_id = 0;
 	for &orientation in Orientation::values().iter() {
-		let axis = orientation as usize;
+		let axis = 1 - orientation as usize;
 		for i in 0 .. board.dim()[axis] {
 			let line = board.subview(Axis(axis), i as usize);
 			let mut run_len = 0;
@@ -121,8 +121,8 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 							.map(|word| 
 								if word.len() <= run_len {
 									placement_id += 1;
-									let (x, y) = orientation.align(j + 1 - word.len(), i);
-									Some(Placement::new(placement_id, orientation, x, y, word))
+									let (y, x) = orientation.align(i, j + 1 - word.len());
+									Some(Placement::new(placement_id, orientation, y, x, word))
 								} else { None }
 							)
 							.fuse()
@@ -187,10 +187,10 @@ fn parse(bytes: Vec<u8>) -> Problem {
     	id += 1;
     }
 	
-	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(w, h));
+	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
-    for (i, cap) in re.captures_iter(board_str).enumerate() {
-    	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
+    for (j, cap) in re.captures_iter(board_str).enumerate() {
+    	for (i, &c) in cap.at(1).unwrap().iter().enumerate() {
     		let (i, j) = (i as dim, j as dim);
     		match c {
     			b'_' => board[MatrixDim(j, i)] = true,

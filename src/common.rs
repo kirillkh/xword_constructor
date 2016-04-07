@@ -109,8 +109,8 @@ impl ::std::ops::Index<dim> for Word {
 //---- Orientation ---------------------------------------------------------------------
 #[derive(PartialEq, Clone, Copy, Hash, Debug)]
 pub enum Orientation { 
-	HOR = 1,
-	VER = 0 
+	VER = 0, 
+	HOR = 1
 }
 
 impl Orientation {
@@ -119,11 +119,11 @@ impl Orientation {
 		VALUES
 	}
 	
-	pub fn align(self, u: dim, v: dim) -> (dim, dim) {
+	pub fn align(self, v: dim, u: dim) -> (dim, dim) {
 		let d0 = self as dim;
 		let d1 = 1 - d0;
 		
-		(u.cond(d0) + v.cond(d1), u.cond(d1) + v.cond(d0))
+		(v.cond(d0) | u.cond(d1), v.cond(d1) | u.cond(d0))
 	}
 	
 //	pub fn by_val(val: usize) -> Orientation {
@@ -140,29 +140,29 @@ pub type PlacementId = u32;
 #[derive(Clone, Debug)]
 pub struct Placement {
 	pub id: PlacementId,
-	pub x: dim,
 	pub y: dim,
+	pub x: dim,
 	pub orientation: Orientation,
 	pub word: Word,
 }
 
 impl Placement {
-	pub fn new(id: PlacementId, orientation: Orientation, x: dim, y: dim, word: Word) -> Placement {
-		Placement { id:id, orientation:orientation, x:x, y:y, word:word }
+	pub fn new(id: PlacementId, orientation: Orientation, y: dim, x: dim, word: Word) -> Placement {
+		Placement { id:id, orientation:orientation, y:y, x:x, word:word }
 	}
 	
 	pub fn align(&self, or: Orientation) -> (dim, dim) {
-		or.align(self.x, self.y)
+		or.align(self.y, self.x)
 	}
 	
 	pub fn fold_positions<A, F>(&self, init: A, mut f: F) -> A 
 			where F: FnMut(A, dim, dim) -> A {
-		let (x, y, len) = (self.x, self.y, self.word.len() as dim);
-		let (xc, yc) = self.orientation.align(1, 0);
+		let (y, x, len) = (self.y, self.x, self.word.len() as dim);
+		let (yc, xc) = self.orientation.align(0, 1);
 		
 		let mut acc = init;
 		for i in 0..len {
-			acc = f(acc, x + i.cond(xc), y + i.cond(yc));
+			acc = f(acc, y + i.cond(yc), x + i.cond(xc));
 		}
 		acc
 	}
@@ -172,8 +172,8 @@ impl Placement {
 			return false
 		}
 		
-		let (u0, v0) = self.align(self.orientation);
-		let (u1, v1) = other.align(self.orientation);
+		let (v0, u0) = self.align(self.orientation);
+		let (v1, u1) = other.align(self.orientation);
 		let (len0, len1) = (self.word.len(), other.word.len());
 		
 		if other.orientation == self.orientation {
@@ -248,53 +248,6 @@ impl Cond for dim {
 
 
 
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-	use super::Orientation::*;
-
-    #[test]
-    fn same_line_incompat_placements() {
-    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
-    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
-    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
-    	let p2 = Placement::new(1, Orientation::HOR, 0, 0, word2);
-    	
-    	assert_eq!(p1.compatible(&p2), false);
-    	assert_eq!(p2.compatible(&p1), false);
-    }
-
-    #[test]
-    fn compat_placements() {
-    	let word = |wid, str: &[u8]| Word::new(wid, str.to_vec().into_boxed_slice());
-    	let place = |pid, or, x, y, word| Placement::new(pid, or, x, y, word);
-    	
-    	{
-	    	let word1 = word(0, b"abc");
-	    	let word2 = word(1, b"ab");
-	    	let p1 = place(0, HOR, 0, 0, word1);
-	    	let p2 = place(1, VER, 0, 0, word2);
-	    	
-	    	assert_eq!(p1.compatible(&p2), true);
-	    	assert_eq!(p2.compatible(&p1), true);
-    	}
-    	
-    	{
-	    	let word1 = word(0, b"bc");
-	    	let word2 = word(1, b"ab");
-	    	let p1 = place(0, HOR, 0, 1, word1);
-	    	let p2 = place(1, VER, 0, 0, word2);
-	    	
-	    	assert_eq!(p1.compatible(&p2), true);
-	    	assert_eq!(p2.compatible(&p1), true);
-    	}
-    	
-    }
-}
-
-
-
     
 pub trait AbstractRng {
     fn gen_f32(&mut self, between: Range<f32>) -> f32;
@@ -362,3 +315,198 @@ pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> (Vec<T>, Vec<
 	let excl = items.split_off(j);
 	(items, excl)
 }
+
+
+
+#[cfg(test)]
+mod placement_tests {
+    use super::*;
+	use super::Orientation::*;
+
+	fn word(wid: WordId, str: &[u8]) -> Word {
+		Word::new(wid, str.to_vec().into_boxed_slice())
+	}
+	
+	fn place(pid: PlacementId, or: Orientation, y: dim, x: dim, word: Word) -> Placement {
+		Placement::new(pid, or, y, x, word)
+	}
+	
+    #[test]
+    fn incompat_overlap() {
+    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
+    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
+    	let p2 = Placement::new(1, Orientation::HOR, 0, 0, word2);
+    	
+    	assert_eq!(p1.compatible(&p2), false);
+    	assert_eq!(p2.compatible(&p1), false);
+    }
+	
+    #[test]
+    fn incompat_adjacent() {
+    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
+    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
+    	let p2 = Placement::new(1, Orientation::VER, 1, 2, word2);
+    	
+    	assert_eq!(p1.compatible(&p2), false);
+    	assert_eq!(p2.compatible(&p1), false);
+    }
+	
+    #[test]
+    fn incompat_intersection() {
+    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
+    	let word2 = Word::new(1, b"bb".to_vec().into_boxed_slice());
+    	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
+    	let p2 = Placement::new(1, Orientation::VER, 0, 0, word2);
+    	
+    	assert_eq!(p1.compatible(&p2), false);
+    	assert_eq!(p2.compatible(&p1), false);
+    }
+
+    #[test]
+    fn compat_intersection() {
+//    	let word = |wid, str: &[u8]| Word::new(wid, str.to_vec().into_boxed_slice());
+//    	let place = |pid, or, y, x, word| Placement::new(pid, or, y, x, word);
+    	
+    	{
+	    	let word1 = word(0, b"abc");
+	    	let word2 = word(1, b"ab");
+	    	let p1 = place(0, HOR, 0, 0, word1);
+	    	let p2 = place(1, VER, 0, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"ab");
+	    	let p1 = place(0, HOR, 1, 0, word1);
+	    	let p2 = place(1, VER, 0, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"ab");
+	    	let p1 = place(0, HOR, 1, 0, word1);
+	    	let p2 = place(1, VER, 0, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    }
+    
+    #[test]
+    fn compat_corners() {
+    	{  // upper left corner VH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, VER, 0, 1, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // upper left corner HH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, HOR, 1, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // lower left corner VH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, VER, 3, 1, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // lower left corner HH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, HOR, 3, 0, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // upper right corner VH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, VER, 0, 4, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // upper right corner HH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, HOR, 1, 4, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // lower right corner VH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, VER, 3, 4, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // lower right corner HH
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, HOR, 2, 2, word1);
+	    	let p2 = place(1, HOR, 3, 4, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    	{  // lower right corner VV
+	    	let word1 = word(0, b"bc");
+	    	let word2 = word(1, b"de");
+	    	let p1 = place(0, VER, 2, 2, word1);
+	    	let p2 = place(1, VER, 4, 3, word2);
+	    	
+	    	assert_eq!(p1.compatible(&p2), true);
+	    	assert_eq!(p2.compatible(&p1), true);
+    	}
+    	
+    }
+}
+
+
+#[cfg(test)]
+mod orientation_tests {
+    use super::*;
+	use super::Orientation::*;
+
+	#[test]
+	fn alignment_tests() {
+		assert_eq!(Orientation::HOR.align(1, 0), (1, 0));
+		assert_eq!(Orientation::HOR.align(0, 1), (0, 1));
+		assert_eq!(Orientation::VER.align(1, 0), (0, 1));
+		assert_eq!(Orientation::VER.align(0, 1), (1, 0));
+	}
+}
+

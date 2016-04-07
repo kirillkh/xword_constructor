@@ -44,9 +44,9 @@ fn fill(templ: &mut OwnedArray<u8, MatrixDim>) {
 	let mut rng = make_rng();
 	let range = Range::new(b'a', b'z');
 	
-	for j in 0..templ.dim()[1] {
-		for i in 0..templ.dim()[0] {
-			let idx = MatrixDim(i, j);
+	for j in 0..templ.dim()[0] {
+		for i in 0..templ.dim()[1] {
+			let idx = MatrixDim(j, i);
 			match templ[idx] {
 				b'_' => templ[idx] = rng.gen_u8(range),
 				b'#' | b'*' => (),
@@ -57,10 +57,10 @@ fn fill(templ: &mut OwnedArray<u8, MatrixDim>) {
 }
 
 fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
-	let w = templ.dim()[0];
-	let h = templ.dim()[1];
+	let h = templ.dim()[0];
+	let w = templ.dim()[1];
 	
-	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(w, h));
+	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	
 	let mut wid = 0;
 	let mut dic : Vec<Word> = vec![];
@@ -99,9 +99,9 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 		}
 	}
 	
-	for i in 0 .. templ.dim()[0] {
-		for j in 0 .. templ.dim()[1] {
-			let idx = MatrixDim(i, j);
+	for j in 0 .. templ.dim()[0] {
+		for i in 0 .. templ.dim()[1] {
+			let idx = MatrixDim(j, i);
 			match templ[idx] {
 				b'#' => board[idx] = false,
 				b'*' | _ => board[idx] = true
@@ -186,11 +186,11 @@ fn parse(bytes: Vec<u8>) -> OwnedArray<u8, MatrixDim> {
 	
 	let mut board: OwnedArray<u8, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	let re = Regex::new(r"(?m)\n?(^[_#\*]+)").unwrap();
-    for (i, cap) in re.captures_iter(board_str).enumerate() {
-    	for (j, &c) in cap.at(1).unwrap().iter().enumerate() {
-    		let (i, j) = (i as dim, j as dim);
+    for (j, cap) in re.captures_iter(board_str).enumerate() {
+    	for (i, &c) in cap.at(1).unwrap().iter().enumerate() {
+    		let (j, i) = (j as dim, i as dim);
     		match c {
-    			b'_' | b'#' | b'*' => board[MatrixDim(i, j)] = c,
+    			b'_' | b'#' | b'*' => board[MatrixDim(j, i)] = c,
     			_    => panic!("unexpected char: {}", c)
     		}
     	}
