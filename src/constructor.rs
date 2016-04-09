@@ -22,10 +22,15 @@ use board::{Board, Eff};
 // GREAT RESULTS!
 const NRPA_LEVEL: u8 = 3;
 const NRPA_ITERS: u32 = 55;
-const NRPA_ALPHA: f32 = 0.125;
-//const NRPA_ALPHA: f32 = 0.0625;
 //const NRPA_ALPHA: f32 = 0.03125;
-//const NRPA_ALPHA: f32 = 1.;
+//const NRPA_ALPHA: f32 = 0.0625;
+//const NRPA_ALPHA: f32 = 0.125;
+//const NRPA_ALPHA: f32 = 0.25;
+//const NRPA_ALPHA: f32 = 0.5;
+const NRPA_ALPHA: f32 = 2.;
+//const NRPA_ALPHA: f32 = 4.;
+const MAX_STALLED_ITERS: u32 = 1;
+
 
 //const NRPA_LEVEL: u8 = 2;
 //const NRPA_ITERS: u32 = 100;
@@ -76,13 +81,13 @@ impl Constructor {
 	
 	pub fn construct(&mut self, placements: &[Placement]) -> Vec<Placement> {
 		let moves: Vec<_> = placements.iter().map(|p| RankedMove { place:p.clone(), rank: 0. }).collect();
-		let (seq, _) = self.nrpa(NRPA_LEVEL, &moves);
-		seq.into_iter().map(|mv| mv.1.place).collect()
+		let (best_seq, best_eff, best_valid_seq, best_valid_eff) = self.nrpa(NRPA_LEVEL, &moves);
+		best_valid_seq.into_iter().map(|mv| mv.1.place).collect()
 	}
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	fn nrpa(&mut self, level: u8, moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff) {
-		let mut moves = moves.to_vec();
+	fn nrpa(&mut self, level: u8, orig_moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff, Vec<ChosenMove>, Eff) {
+		let mut moves = orig_moves.to_vec();
 		let mut best_seq : Vec<ChosenMove> = vec![];
 		let mut best_eff = Eff(0);
 			
@@ -127,32 +132,24 @@ impl Constructor {
 				}
 			}
 			
-			self.fixup_board(best_seq)
-//			(best_seq, Eff(0))
+			let mut grid = self.place_on_grid(&best_seq);
+			best_eff = grid.efficiency();
+			let best_valid_seq = grid.fixup_adjacent();
+			let best_valid_eff = grid.efficiency();
+			(best_seq, best_eff, best_valid_seq, best_valid_eff)
 		} else {
-			let mut moves : Vec<RankedMove> = moves.to_vec();
-			for _ in 0..NRPA_ITERS {
-				let (new_seq, new_eff) = self.nrpa(level - 1, &moves);
-				
-					if level == NRPA_LEVEL {
-						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.word.id, mv.rank)).collect();
-						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-						let skip = if ranks.len()<=40 { 0 } else { ranks.len()-20 };
-						ranks = ranks.into_iter().skip(skip).collect();
-						println!("top ranks: {:?}", ranks);
-						
-						let mut ranks : Vec<_> = new_seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
-						println!("new ranks: {:?}", ranks);
-						
-						let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
-						board.place(new_seq.iter().collect());
-						board.print();
-						println!("-------------- eff {} ----------------", new_eff.0);
-					}
-					
+			let mut best_valid_seq = vec![];
+			let mut best_valid_eff = Eff(0);
+			
+			let mut best_saved_seq = vec![];
+			let mut best_saved_eff = Eff(0);
+			
+			let mut last_progress = 0;
+			
+//			let mut moves : Vec<RankedMove> = moves.to_vec();
+			for iter in 0..NRPA_ITERS {
+				let (new_seq, new_eff, new_valid_seq, new_valid_eff) = self.nrpa(level - 1, &moves);
 
-				moves = self.nrpa_adapt(moves, &new_seq);
-				
 //				if new_seq.len() as u32 + *new_eff >= best_seq.len() as u32 + *best_eff 
 //				if *new_eff >= *best_eff {
 //					best_seq = new_seq;
@@ -180,14 +177,61 @@ impl Constructor {
 //					}
 
 
+					if level == NRPA_LEVEL {
+						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.word.id, mv.rank)).collect();
+						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+						let skip = if ranks.len()<=40 { 0 } else { ranks.len()-20 };
+						ranks = ranks.into_iter().skip(skip).collect();
+						println!("top ranks: {:?}", ranks);
+						
+						let mut ranks : Vec<_> = new_seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
+						println!("new ranks: {:?}", ranks);
+						
+						let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
+						board.place(new_seq.iter().collect());
+						board.print();
+						println!("-------------- eff new: {} valid: {}, ----------------", *new_eff, *new_valid_eff);
+					}
 
-				moves = self.nrpa_adapt(moves, &new_seq);
-				if *new_eff >= *best_eff {
-					best_seq = new_seq;
-					best_eff = new_eff;
-				} else {
-					moves = self.nrpa_adapt(moves, &best_seq);
+				if *new_valid_eff >= *best_valid_eff {
+					best_valid_seq = new_valid_seq;
+					best_valid_eff = new_valid_eff;
 				}
+				
+				let max_stall = MAX_STALLED_ITERS + (level as u32);
+				
+				let must_backtrack = (*new_eff <= *best_eff) && (iter - last_progress >= max_stall);
+				
+					if level == NRPA_LEVEL {
+						println!("backtrack: {}, iter: {}, progress: {}", must_backtrack, iter, last_progress);
+					} 
+				
+				if must_backtrack {
+					moves = self.nrpa_backtrack(&best_seq, moves, orig_moves);
+					best_seq.truncate(0);
+					best_eff = Eff(0);
+					last_progress = iter;
+				} else {
+					moves = self.nrpa_adapt(moves, &new_seq);
+					
+					if *new_eff >= *best_eff {
+						if *new_eff > *best_eff {
+							last_progress = iter;
+						}
+						
+						best_seq = new_seq;
+						best_eff = new_eff;
+						
+						if *best_eff >= *best_saved_eff {
+							best_saved_seq = best_seq.clone();
+							best_saved_eff = best_eff;
+						}
+					} else {
+						moves = self.nrpa_adapt(moves, &best_seq);
+//						moves = self.nrpa_adapt(moves, &best_valid_seq);
+					}
+				}
+				
 			}
 			
 			if level == NRPA_LEVEL {
@@ -201,11 +245,11 @@ impl Constructor {
 			}
 			
 			
-			(best_seq, best_eff)
+			(best_saved_seq, best_saved_eff, best_valid_seq, best_valid_eff)
 		}
 	}
 	
-	fn nrpa_adapt<'a>(&self, mut moves: Vec<RankedMove>, seq: &[ChosenMove]) -> Vec<RankedMove> {
+	fn nrpa_adapt<'a>(&self, moves: Vec<RankedMove>, seq: &[ChosenMove]) -> Vec<RankedMove> {
 		let mut moves_ = moves.clone();
 		
 		{
@@ -224,56 +268,41 @@ impl Constructor {
 //				let (m, _) = filter_indices(moves, &partition.incl);
 //				moves = m;
 //				let (r, _) = filter_indices(refs_, &partition.incl);
-//				refs_ = r;
+//				refs_ = r;d
 
 				
-				refs_[idx].rank += NRPA_ALPHA;
+				let chosen_id = rnk_mv.place.id;
 				let (mut incl, mut excl) = filter_indices(refs_, &partition.incl);
 				let exp_ranks : Vec<f32> = excl.iter().map(|mv| fastexp(mv.rank)).collect();
 				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
 				for i in 0..excl.len() {
 					excl[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
+					if excl[i].place.id == chosen_id {
+						excl[i].rank += NRPA_ALPHA;
+					}
 				}
 				refs_ = incl;
-				
-				let (m, _) = filter_indices(moves, &partition.incl);
-				moves = m;
 			}
 		}
 		
 		moves_
 	}
 	
+	fn nrpa_backtrack<'a>(&self, seq: &[ChosenMove], mut moves: Vec<RankedMove>, orig_moves: &[RankedMove]) -> Vec<RankedMove> {
+		for &ChosenMove(_, ref rnk_mv, _) in seq {
+			let chosen_id = rnk_mv.place.id as usize;
+			moves[chosen_id].rank = orig_moves[chosen_id].rank;
+		}
 	
-	fn fixup_board<Move: AsRef<Placement>+Clone> (&mut self, seq: Vec<Move>) -> (Vec<Move>, Eff) {
-//		let fixed_indices: Vec<usize>;
-//		let eff: Eff;
-//		{
-//			// TODO: this may be expensive, might need to cache
-//			let mut board = Board::new(self.h, self.w, &mut self.rng);
-//			
-//			for (i, mv) in seq.iter().enumerate() {
-//				let idxmv = IndexedMove { place: mv.as_ref(), moves_idx: i };
-//				board.place(idxmv); 
-//			}
-//			
-//			let fixed : Vec<IndexedMove> = board.fixup_adjacent();
-//			fixed_indices = fixed.into_iter().map(|idxmv| idxmv.moves_idx).collect();
-//			eff = board.efficiency();
-//		};
-//		
-//		(filter_indices(seq, &fixed_indices), eff)
+		moves
+	}
+	
 
+
+	fn place_on_grid<Move: AsRef<Placement>+Clone> (&mut self, seq: &Vec<Move>) -> Board<Move> {
 		let mut board = Board::new(self.h, self.w, &mut *self.rng);
-		
-//		board.place(seq);
-//		let fixed : Vec<Move> = board.fixup_adjacent();
-//		let eff = board.efficiency();
-//		(fixed, eff)
-
 		board.place(seq.clone());
-		let eff = board.efficiency();
-		(seq, eff)
+		board
 	}
 	
 	
