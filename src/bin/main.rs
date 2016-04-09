@@ -122,7 +122,7 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 								if word.len() <= run_len {
 									placement_id += 1;
 									let (y, x) = orientation.align(i, j + 1 - word.len());
-									Some(Placement::new(placement_id, orientation, y, x, word))
+									Some(Placement::new(placement_id-1, orientation, y, x, word))
 								} else { None }
 							)
 							.fuse()
@@ -202,3 +202,26 @@ fn parse(bytes: Vec<u8>) -> Problem {
     
     Problem::new(dic, board)
 }
+
+
+#[cfg(test)]
+mod placement_tests {
+	use xword::*;
+	use ndarray::*;
+
+	fn word(wid: WordId, str: &[u8]) -> Word {
+		Word::new(wid, str.to_vec().into_boxed_slice())
+	}
+	
+	#[test]
+	fn placement_ids_are_nat() {
+		let grid: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(4, 3));
+		let words = vec![word(0, b"ab"), word(1, b"bc"), word(2, b"cde"), word(3, b"cdef"), word(4, b"fedc"), word(5, b"fedcb")];
+		let problem = Problem::new(words, grid);
+		let places = super::gen_placements(&problem);
+		
+		for (i, place) in places.into_iter().enumerate() {
+			assert_eq!(i, place.id as usize)
+		}
+	}
+}	

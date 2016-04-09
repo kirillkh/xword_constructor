@@ -12,7 +12,7 @@ use rand::Rng;
 #[allow(non_camel_case_types)]
 pub type eff_t = u32;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Eff(pub eff_t);
 
 impl Deref for Eff {
