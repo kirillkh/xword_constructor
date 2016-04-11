@@ -86,8 +86,9 @@ impl Constructor {
 	}
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	fn nrpa(&mut self, level: u8, orig_moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff, Vec<ChosenMove>, Eff) {
-		let mut moves = orig_moves.to_vec();
+	fn nrpa(&mut self, level: u8, parent_moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff, Vec<ChosenMove>, Eff) {
+		let mut parent_moves = parent_moves.to_vec();
+		let mut moves = parent_moves.to_vec();
 		let mut best_seq : Vec<ChosenMove> = vec![];
 		let mut best_eff = Eff(0);
 			
@@ -207,13 +208,11 @@ impl Constructor {
 					} 
 				
 				if must_backtrack {
-					moves = self.nrpa_backtrack(&best_seq, moves, orig_moves);
+					moves = self.nrpa_backtrack(&best_seq, moves, &mut parent_moves);
 					best_seq.truncate(0);
 					best_eff = Eff(0);
 					last_progress = iter;
 				} else {
-					moves = self.nrpa_adapt(moves, &new_seq);
-					
 					if *new_eff >= *best_eff {
 						if *new_eff > *best_eff {
 							last_progress = iter;
@@ -227,9 +226,9 @@ impl Constructor {
 							best_saved_eff = best_eff;
 						}
 					} else {
-						moves = self.nrpa_adapt(moves, &best_seq);
 //						moves = self.nrpa_adapt(moves, &best_valid_seq);
 					}
+					moves = self.nrpa_adapt(moves, &best_seq);
 				}
 				
 			}
@@ -288,10 +287,14 @@ impl Constructor {
 		moves_
 	}
 	
-	fn nrpa_backtrack<'a>(&self, seq: &[ChosenMove], mut moves: Vec<RankedMove>, orig_moves: &[RankedMove]) -> Vec<RankedMove> {
+	fn nrpa_backtrack<'a>(&self, seq: &[ChosenMove], mut moves: Vec<RankedMove>, parent_moves: &mut Vec<RankedMove>) -> Vec<RankedMove> {
+		let exp_ranks : Vec<f32> = parent_moves.iter().map(|mv| fastexp(mv.rank)).collect();
+		let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
+		
 		for &ChosenMove(_, ref rnk_mv, _) in seq {
 			let chosen_id = rnk_mv.place.id as usize;
-			moves[chosen_id].rank = orig_moves[chosen_id].rank;
+			parent_moves[chosen_id].rank -= NRPA_ALPHA * exp_ranks[chosen_id] / z;
+			moves[chosen_id].rank = parent_moves[chosen_id].rank;
 		}
 	
 		moves
