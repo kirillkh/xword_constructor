@@ -88,56 +88,13 @@ impl Constructor {
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
 	fn nrpa(&mut self, level: u8, parent_moves: &[RankedMove]) -> (ChosenSequence, ChosenSequence) {
-		let mut parent_moves = parent_moves.to_vec();
-		let mut moves = parent_moves.to_vec();
-		let mut best_seq = ChosenSequence::default();
-			
 		if level == 0 {
-			{
-				let mut refs : Vec<&mut RankedMove> = moves.iter_mut().collect();
-				let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| fastexp(mv.rank + (mv.place.word.str.len() as f32))).collect();
-				
-				// random rollout according to the policy
-				while !refs.is_empty() {
-					// 1. choose a move based on probability proportional to exp(mv.rank)
-					let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
-					let chosen_idx = {
-						let between = Range::new(0., z);
-						let mut v = self.rng.gen_f32(between);
-						
-						let mut chosen_idx = 0;
-						for (i, &rnk) in exp_ranks.iter().enumerate() {
-					    	chosen_idx = i;
-						    if v <= rnk {
-						    	break; 
-						    }
-						    v -= rnk;
-						}
-						chosen_idx
-					};
-					
-					
-					let mv = refs[chosen_idx].clone();
-					
-					// 2. filter compatible moves 
-					let partition = Constructor::partition_compat(mv.clone(), &refs);
-//					println!("refs = {:?}", refs);
-//					println!("partition = {:?}", partition.incl);
-					let (r, _) = filter_indices(refs, &partition.incl);
-					refs = r;
-					let (e, _) = filter_indices(exp_ranks, &partition.incl);
-					exp_ranks = e;
-					
-					// 3. append the move to the seq
-					best_seq.seq.push(ChosenMove(chosen_idx as u32, mv, partition));
-				}
-			}
-			
-			let mut grid = self.place_on_grid(&best_seq.seq);
-			best_seq.eff = grid.efficiency();
-			let best_valid_seq = ChosenSequence::new(grid.fixup_adjacent(), grid.efficiency());
-			(best_seq, best_valid_seq)
+			self.nrpa_monte_carlo(&parent_moves)
 		} else {
+			let mut parent_moves = parent_moves.to_vec();
+			let mut moves = parent_moves.to_vec();
+			let mut best_seq = ChosenSequence::default();
+				
 			let mut best_valid_seq = ChosenSequence::default();
 			let mut best_saved_seq = ChosenSequence::default();
 			
@@ -212,6 +169,59 @@ impl Constructor {
 		}
 	}
 	
+	
+	fn nrpa_monte_carlo(&mut self, parent_moves: &[RankedMove]) -> (ChosenSequence, ChosenSequence) {
+		let mut moves = parent_moves.to_vec();
+		let mut best_seq = ChosenSequence::default();
+		{
+			let mut refs : Vec<&mut RankedMove> = moves.iter_mut().collect();
+			let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| fastexp(mv.rank + (mv.place.word.str.len() as f32))).collect();
+			
+			// random rollout according to the policy
+			while !refs.is_empty() {
+				// 1. choose a move based on probability proportional to exp(mv.rank)
+				let chosen_idx = self.choose_proportional(&exp_ranks);
+				
+				let mv = refs[chosen_idx].clone();
+				
+				// 2. filter compatible moves 
+				let partition = Constructor::partition_compat(mv.clone(), &refs);
+//					println!("refs = {:?}", refs);
+//					println!("partition = {:?}", partition.incl);
+				let (r, _) = filter_indices(refs, &partition.incl);
+				refs = r;
+				let (e, _) = filter_indices(exp_ranks, &partition.incl);
+				exp_ranks = e;
+				
+				// 3. append the move to the seq
+				best_seq.seq.push(ChosenMove(chosen_idx as u32, mv, partition));
+			}
+		}
+		
+		let mut grid = self.place_on_grid(&best_seq.seq);
+		best_seq.eff = grid.efficiency();
+		let best_valid_seq = ChosenSequence::new(grid.fixup_adjacent(), grid.efficiency());
+		(best_seq, best_valid_seq)
+	}
+	
+	
+	fn choose_proportional(&mut self, choices: &Vec<f32>) -> usize {
+		let z : f32 = choices.iter().fold(0., ::std::ops::Add::add);
+		let between = Range::new(0., z);
+		let mut v = self.rng.gen_f32(between);
+		
+		let mut chosen_idx = 0;
+		for (i, &rnk) in choices.iter().enumerate() {
+	    	chosen_idx = i;
+		    if v <= rnk {
+		    	return i; 
+		    }
+		    v -= rnk;
+		}
+		chosen_idx
+	}
+	
+	
 	fn nrpa_adapt<'a>(&self, moves: Vec<RankedMove>, seq: &[ChosenMove]) -> Vec<RankedMove> {
 		let mut moves_ = moves.clone();
 		
@@ -223,7 +233,7 @@ impl Constructor {
 				
 //				refs_[idx].rank += NRPA_ALPHA;
 //				let exp_ranks : Vec<f32> = moves.iter().map(|mv| fastexp(mv.rank)).collect();
-//				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
+//				let z : f32 = exp_ranks.iter().fold(0., ::std::ops::Add::add);
 //				for i in 0..refs_.len() {
 //					refs_[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
 //				}
@@ -237,7 +247,7 @@ impl Constructor {
 				let chosen_id = rnk_mv.place.id;
 				let (mut incl, mut excl) = filter_indices(refs_, &partition.incl);
 				let exp_ranks : Vec<f32> = excl.iter().map(|mv| fastexp(mv.rank)).collect();
-				let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
+				let z : f32 = exp_ranks.iter().fold(0., ::std::ops::Add::add);
 				for i in 0..excl.len() {
 					excl[i].rank -= NRPA_ALPHA * exp_ranks[i] / z;
 					if excl[i].place.id == chosen_id {
@@ -253,7 +263,7 @@ impl Constructor {
 	
 	fn nrpa_backtrack<'a>(&self, seq: &[ChosenMove], mut moves: Vec<RankedMove>, parent_moves: &mut Vec<RankedMove>) -> Vec<RankedMove> {
 		let exp_ranks : Vec<f32> = parent_moves.iter().map(|mv| fastexp(mv.rank)).collect();
-		let z : f32 = exp_ranks.iter().fold(0., |acc, erank| acc + erank);
+		let z : f32 = exp_ranks.iter().fold(0., ::std::ops::Add::add);
 		
 		for &ChosenMove(_, ref rnk_mv, _) in seq {
 			let chosen_id = rnk_mv.place.id as usize;
