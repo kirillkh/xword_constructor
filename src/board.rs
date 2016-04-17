@@ -10,7 +10,7 @@ use rand::Rng;
 
 //---- Eff -----------------------------------------------------------------------------
 #[allow(non_camel_case_types)]
-pub type eff_t = u32;
+pub type eff_t = i32;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Eff(pub eff_t);
@@ -91,9 +91,10 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 				place.fold_positions(acc, |acc, y, x| {
 					acc + self.field[MatrixDim(y, x)].len() - 1
 				})
-		}) as u32;
+		}) as eff_t;
 		
-		Eff(intersections / 2)
+//		Eff(intersections - (self.moves.len() as eff_t))
+		Eff(intersections/2)
 	}
 	
 	

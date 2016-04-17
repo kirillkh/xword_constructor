@@ -2,6 +2,10 @@ extern crate xword;
 extern crate regex;
 extern crate ndarray;
 extern crate rand;
+extern crate getopts;
+
+use getopts::Options;
+use std::env;
 
 use std::str;
 use std::error::Error;
@@ -17,62 +21,21 @@ use xword::{Board, Constructor, dim, Word, WordId, Orientation, Placement, Matri
 use xword::util;
 
 fn main() {
+    if let Some(opts) = parse_opts() {
+    	with_opts(opts)
+    }
+}
+
+
+fn with_opts(opts: Opts) {
+    let bytes = read_problem(&*opts.prob_file);
     
-    let bytes = read_problem();
-    
-    let problem = parse(bytes);
+    let problem = parse_problem(bytes);
     
     let placements = gen_placements(&problem);
     
     let dic_str : Vec<_> = problem.dic.iter().map(|word| (word.id, String::from_utf8_lossy(&*word.str))).collect();
     println!("DIC={:?}", dic_str);
-//    println!("PLACEMENTS: {:?}", placements);
-    
-    
-    
-//    let mut w = 0;
-//    let mut h = 0;
-//    for (i, &b) in data.iter().enumerate() {
-//    	match b {
-//    		b'\n' => {
-//    			let line = str::from_utf8(&data[0..i]).unwrap();
-//    			
-//    			let re = Regex::new(r"(\d{1,3})x(\d{1,3})").unwrap();
-//				for cap in re.captures_iter(line) {
-//					h = cap.at(1).unwrap().parse::<i32>().unwrap();
-//					w = cap.at(2).unwrap().parse::<i32>().unwrap();
-//				}
-//    			
-//    			data = &data[i+1..];
-//    		},
-//    		_ => {}
-//    	}
-//    }
-//    
-//    
-//    
-//    
-//    let mut line_start = 0;
-//    let mut j = 0;
-//    for (i, &b) in data.into_iter().enumerate().skip(line_start) {
-//    	match b {
-//    		b'\n' => {
-////    			line_start = i+1;
-//				j += 1;
-//    		},
-//    		b'_' =>  {
-//    			
-//    		},
-//    		b'x' =>  {
-//    			
-//    		},
-//    		_    =>  {
-//    			panic!("unrecornized symbol: {}", b);
-//    		}
-//    	}
-//    }
-    
-    
     
 	let dim = problem.board.dim();
 	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
@@ -83,6 +46,45 @@ fn main() {
 		let moves = seq.iter().cloned().filter(|place| place.orientation == or).collect();
 		print_board(dim.0, dim.1, moves);
 	}
+}
+
+
+fn parse_opts() -> Option<Opts> {
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+
+    let mut opts = Options::new();
+    opts.optflag("h", "help", "print this help menu");
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => { Some(m) }
+        Err(f) => {
+        	println!("Error: {}\n", f.to_string());
+        	print_usage(&program, &opts);
+        	None 
+        }
+    };
+    
+    if let Some(matches) = matches {
+    	if matches.opt_present("h") {
+	        print_usage(&program, &opts);
+	        return None;
+	    }
+	    
+	    let prob_file = if !matches.free.is_empty() {
+	        matches.free[0].clone()
+	    } else {
+	        "problem.xword".to_string()
+	    };
+	    
+	    Some(Opts{ prob_file: prob_file })
+    } else {
+    	None
+    }
+}
+
+fn print_usage(program: &str, opts: &Options) {
+    let brief = format!("Usage: {} [options] [PROBLEM_FILE]", program);
+    print!("{}", opts.usage(&brief));
 }
 
 
@@ -142,8 +144,8 @@ fn gen_placements(problem: &Problem) -> Vec<Placement> {
 	out_placements
 }
 
-fn read_problem() -> Vec<u8> {
-	let path = Path::new("problem.xword");
+fn read_problem(file: &str) -> Vec<u8> {
+	let path = Path::new(file);
     let display = path.display();
 
 	// 1. read the file
@@ -168,7 +170,7 @@ fn read_problem() -> Vec<u8> {
 } 
 
 
-fn parse(bytes: Vec<u8>) -> Problem {
+fn parse_problem(bytes: Vec<u8>) -> Problem {
 	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})[\r\n]+((?:[_#]+[\r\n]{1,2})+)-----((?:[\r\n]{1,2}[a-z]+)+)[\r\n]*$").unwrap();
 	let caps = re.captures(&bytes).unwrap();
 	
@@ -202,6 +204,13 @@ fn parse(bytes: Vec<u8>) -> Problem {
     
     Problem::new(dic, board)
 }
+
+
+
+struct Opts {
+	prob_file: String
+}
+
 
 
 #[cfg(test)]

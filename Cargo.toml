@@ -20,6 +20,7 @@ path = "src/bin/problem_gen.rs"
 ndarray = "0.4"
 rand = "0.3"
 regex = "0.1"
+getopts = "0.2"
 
 [profile.release]
 opt-level = 3
