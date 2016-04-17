@@ -86,6 +86,42 @@ impl Constructor {
 		best_valid_seq.seq.into_iter().map(|mv| mv.1.place).collect()
 	}
 	
+	fn debug1(&mut self, level: u8, moves: &[RankedMove], new_seq: &ChosenSequence, new_valid_seq: &ChosenSequence) {
+		if level == NRPA_LEVEL {
+			let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.word.id, mv.rank)).collect();
+			ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+			let skip = if ranks.len()<=40 { 0 } else { ranks.len()-20 };
+			ranks = ranks.into_iter().skip(skip).collect();
+			println!("top ranks: {:?}", ranks);
+			
+			let mut ranks : Vec<_> = new_seq.seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
+			println!("new ranks: {:?}", ranks);
+			
+			let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
+			board.place(new_seq.seq.iter().collect());
+			board.print();
+			println!("-------------- eff new: {} valid: {}, ----------------", *new_seq.eff, *new_valid_seq.eff);
+		}
+	}
+	
+	fn debug2(&mut self, level: u8, must_backtrack: bool, iter: u32, last_progress: u32) {
+		if level == NRPA_LEVEL {
+			println!("backtrack: {}, iter: {}, progress: {}", must_backtrack, iter, last_progress);
+		} 
+	}
+	
+	fn debug3(&mut self, level: u8, best_seq: &ChosenSequence) {
+		if level == NRPA_LEVEL {
+//				let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.id, mv.rank)).collect();
+//				ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+//				ranks = ranks.into_iter().collect();
+//				println!("{:?}\n", ranks);
+			
+			let mut seq : Vec<_> = best_seq.seq.iter().map(|mv| &mv.1).collect();
+			println!("{:?}", seq);
+		}
+	}
+	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
 	fn nrpa(&mut self, level: u8, parent_moves: &[RankedMove]) -> (ChosenSequence, ChosenSequence) {
 		if level == 0 {
@@ -102,21 +138,7 @@ impl Constructor {
 			
 			for iter in 0..NRPA_ITERS {
 				let (new_seq, new_valid_seq) = self.nrpa(level - 1, &moves);
-					if level == NRPA_LEVEL {
-						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.word.id, mv.rank)).collect();
-						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-						let skip = if ranks.len()<=40 { 0 } else { ranks.len()-20 };
-						ranks = ranks.into_iter().skip(skip).collect();
-						println!("top ranks: {:?}", ranks);
-						
-						let mut ranks : Vec<_> = new_seq.seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
-						println!("new ranks: {:?}", ranks);
-						
-						let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
-						board.place(new_seq.seq.iter().collect());
-						board.print();
-						println!("-------------- eff new: {} valid: {}, ----------------", *new_seq.eff, *new_valid_seq.eff);
-					}
+				self.debug1(level, &moves, &new_seq, &new_valid_seq); // TODO debug
 
 				if *new_valid_seq.eff >= *best_valid_seq.eff {
 					best_valid_seq = new_valid_seq;
@@ -126,9 +148,7 @@ impl Constructor {
 				
 				let must_backtrack = (*new_seq.eff <= *best_seq.eff) && (iter - last_progress >= max_stall);
 				
-					if level == NRPA_LEVEL {
-						println!("backtrack: {}, iter: {}, progress: {}", must_backtrack, iter, last_progress);
-					} 
+				self.debug2(level, must_backtrack, iter, last_progress); // TODO debug
 				
 				if must_backtrack {
 					moves = self.nrpa_backtrack(&best_seq.seq, moves, &mut parent_moves);
@@ -154,16 +174,7 @@ impl Constructor {
 				
 			}
 			
-			if level == NRPA_LEVEL {
-//				let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.id, mv.rank)).collect();
-//				ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-//				ranks = ranks.into_iter().collect();
-//				println!("{:?}\n", ranks);
-				
-				let mut seq : Vec<_> = best_seq.seq.iter().map(|mv| &mv.1).collect();
-				println!("{:?}", seq);
-			}
-			
+			self.debug3(level, &best_seq); // TODO debug
 			
 			(best_saved_seq, best_valid_seq)
 		}
@@ -171,9 +182,9 @@ impl Constructor {
 	
 	
 	fn nrpa_monte_carlo(&mut self, parent_moves: &[RankedMove]) -> (ChosenSequence, ChosenSequence) {
-		let mut moves = parent_moves.to_vec();
 		let mut best_seq = ChosenSequence::default();
 		{
+			let mut moves = parent_moves.to_vec();
 			let mut refs : Vec<&mut RankedMove> = moves.iter_mut().collect();
 			let mut exp_ranks : Vec<f32> = refs.iter().map(|mv| fastexp(mv.rank + (mv.place.word.str.len() as f32))).collect();
 			
@@ -186,8 +197,6 @@ impl Constructor {
 				
 				// 2. filter compatible moves 
 				let partition = Constructor::partition_compat(mv.clone(), &refs);
-//					println!("refs = {:?}", refs);
-//					println!("partition = {:?}", partition.incl);
 				let (r, _) = filter_indices(refs, &partition.incl);
 				refs = r;
 				let (e, _) = filter_indices(exp_ranks, &partition.incl);
