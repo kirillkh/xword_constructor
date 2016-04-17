@@ -27,7 +27,8 @@ const NRPA_ITERS: u32 = 55;
 //const NRPA_ALPHA: f32 = 0.125;
 //const NRPA_ALPHA: f32 = 0.25;
 //const NRPA_ALPHA: f32 = 0.5;
-const NRPA_ALPHA: f32 = 2.;
+const NRPA_ALPHA: f32 = 1.;
+//const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
 const MAX_STALLED_ITERS: u32 = 1;
 
@@ -81,16 +82,15 @@ impl Constructor {
 	
 	pub fn construct(&mut self, placements: &[Placement]) -> Vec<Placement> {
 		let moves: Vec<_> = placements.iter().map(|p| RankedMove { place:p.clone(), rank: 0. }).collect();
-		let (best_seq, best_eff, best_valid_seq, best_valid_eff) = self.nrpa(NRPA_LEVEL, &moves);
-		best_valid_seq.into_iter().map(|mv| mv.1.place).collect()
+		let (best_seq, best_valid_seq) = self.nrpa(NRPA_LEVEL, &moves);
+		best_valid_seq.seq.into_iter().map(|mv| mv.1.place).collect()
 	}
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	fn nrpa(&mut self, level: u8, parent_moves: &[RankedMove]) -> (Vec<ChosenMove>, Eff, Vec<ChosenMove>, Eff) {
+	fn nrpa(&mut self, level: u8, parent_moves: &[RankedMove]) -> (ChosenSequence, ChosenSequence) {
 		let mut parent_moves = parent_moves.to_vec();
 		let mut moves = parent_moves.to_vec();
-		let mut best_seq : Vec<ChosenMove> = vec![];
-		let mut best_eff = Eff(0);
+		let mut best_seq = ChosenSequence::default();
 			
 		if level == 0 {
 			{
@@ -129,55 +129,22 @@ impl Constructor {
 					exp_ranks = e;
 					
 					// 3. append the move to the seq
-					best_seq.push(ChosenMove(chosen_idx as u32, mv, partition));
+					best_seq.seq.push(ChosenMove(chosen_idx as u32, mv, partition));
 				}
 			}
 			
-			let mut grid = self.place_on_grid(&best_seq);
-			best_eff = grid.efficiency();
-			let best_valid_seq = grid.fixup_adjacent();
-			let best_valid_eff = grid.efficiency();
-			(best_seq, best_eff, best_valid_seq, best_valid_eff)
+			let mut grid = self.place_on_grid(&best_seq.seq);
+			best_seq.eff = grid.efficiency();
+			let best_valid_seq = ChosenSequence::new(grid.fixup_adjacent(), grid.efficiency());
+			(best_seq, best_valid_seq)
 		} else {
-			let mut best_valid_seq = vec![];
-			let mut best_valid_eff = Eff(0);
-			
-			let mut best_saved_seq = vec![];
-			let mut best_saved_eff = Eff(0);
+			let mut best_valid_seq = ChosenSequence::default();
+			let mut best_saved_seq = ChosenSequence::default();
 			
 			let mut last_progress = 0;
 			
-//			let mut moves : Vec<RankedMove> = moves.to_vec();
 			for iter in 0..NRPA_ITERS {
-				let (new_seq, new_eff, new_valid_seq, new_valid_eff) = self.nrpa(level - 1, &moves);
-
-//				if new_seq.len() as u32 + *new_eff >= best_seq.len() as u32 + *best_eff 
-//				if *new_eff >= *best_eff {
-//					best_seq = new_seq;
-//					best_eff = new_eff;
-//				} else if best_seq.len()>0 {
-//					if *new_eff == *best_eff {
-//						best_seq = new_seq;
-//						best_eff = new_eff;
-//					}
-					
-//					let max_ranked = best_seq.iter().fold((best_seq[0].1.rank, None), |(max, idx), mv| 
-//						if mv.1.rank >= max {
-//							(mv.1.rank, Some(&mv.1))
-//						} else {
-//							(max, idx)
-//						}
-//					).1.unwrap();
-//					
-//					for  mv in &mut moves {
-//						if mv.place.id == max_ranked.place.id {
-//							mv.rank -= NRPA_ALPHA;
-//							mv.rank = 0.;
-//							break;
-//						}
-//					}
-
-
+				let (new_seq, new_valid_seq) = self.nrpa(level - 1, &moves);
 					if level == NRPA_LEVEL {
 						let mut ranks : Vec<_> = moves.iter().map(|mv| (mv.place.word.id, mv.rank)).collect();
 						ranks.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
@@ -185,50 +152,47 @@ impl Constructor {
 						ranks = ranks.into_iter().skip(skip).collect();
 						println!("top ranks: {:?}", ranks);
 						
-						let mut ranks : Vec<_> = new_seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
+						let mut ranks : Vec<_> = new_seq.seq.iter().map(|cmv| (cmv.1.place.word.id, cmv.1.rank)).collect();
 						println!("new ranks: {:?}", ranks);
 						
 						let mut board : Board<&ChosenMove> = Board::new(self.h, self.w, &mut *self.rng);
-						board.place(new_seq.iter().collect());
+						board.place(new_seq.seq.iter().collect());
 						board.print();
-						println!("-------------- eff new: {} valid: {}, ----------------", *new_eff, *new_valid_eff);
+						println!("-------------- eff new: {} valid: {}, ----------------", *new_seq.eff, *new_valid_seq.eff);
 					}
 
-				if *new_valid_eff >= *best_valid_eff {
+				if *new_valid_seq.eff >= *best_valid_seq.eff {
 					best_valid_seq = new_valid_seq;
-					best_valid_eff = new_valid_eff;
 				}
 				
 				let max_stall = MAX_STALLED_ITERS + (level as u32);
 				
-				let must_backtrack = (*new_eff <= *best_eff) && (iter - last_progress >= max_stall);
+				let must_backtrack = (*new_seq.eff <= *best_seq.eff) && (iter - last_progress >= max_stall);
 				
 					if level == NRPA_LEVEL {
 						println!("backtrack: {}, iter: {}, progress: {}", must_backtrack, iter, last_progress);
 					} 
 				
 				if must_backtrack {
-					moves = self.nrpa_backtrack(&best_seq, moves, &mut parent_moves);
-					best_seq.truncate(0);
-					best_eff = Eff(0);
+					moves = self.nrpa_backtrack(&best_seq.seq, moves, &mut parent_moves);
+					best_seq.seq.truncate(0);
+					best_seq.eff = Eff(0);
 					last_progress = iter;
 				} else {
-					if *new_eff >= *best_eff {
-						if *new_eff > *best_eff {
+					if *new_seq.eff >= *best_seq.eff {
+						if *new_seq.eff > *best_seq.eff {
 							last_progress = iter;
 						}
 						
 						best_seq = new_seq;
-						best_eff = new_eff;
 						
-						if *best_eff >= *best_saved_eff {
+						if *best_seq.eff >= *best_saved_seq.eff {
 							best_saved_seq = best_seq.clone();
-							best_saved_eff = best_eff;
 						}
 					} else {
 //						moves = self.nrpa_adapt(moves, &best_valid_seq);
 					}
-					moves = self.nrpa_adapt(moves, &best_seq);
+					moves = self.nrpa_adapt(moves, &best_seq.seq);
 				}
 				
 			}
@@ -239,12 +203,12 @@ impl Constructor {
 //				ranks = ranks.into_iter().collect();
 //				println!("{:?}\n", ranks);
 				
-				let mut seq : Vec<_> = best_seq.iter().map(|mv| &mv.1).collect();
+				let mut seq : Vec<_> = best_seq.seq.iter().map(|mv| &mv.1).collect();
 				println!("{:?}", seq);
 			}
 			
 			
-			(best_saved_seq, best_saved_eff, best_valid_seq, best_valid_eff)
+			(best_saved_seq, best_valid_seq)
 		}
 	}
 	
@@ -328,6 +292,26 @@ impl Constructor {
 		partition
 	}
 }
+
+
+#[derive(Clone, Debug)]
+struct ChosenSequence {
+	seq: Vec<ChosenMove>, 
+	eff: Eff
+}
+
+impl ChosenSequence {
+	fn new(seq: Vec<ChosenMove>, eff: Eff) -> ChosenSequence {
+		ChosenSequence { seq:seq, eff:eff }
+	}
+}
+
+impl Default for ChosenSequence {
+	fn default() -> ChosenSequence {
+		Self::new(vec![], Eff(0))
+	}
+}
+
 
 
 #[derive(Clone, Debug)]
