@@ -25,6 +25,14 @@ impl Deref for Eff {
 
 
 
+//---- AdjacencyInfo -------------------------------------------------------------------
+pub struct AdjacencyInfo {
+	pub y: dim,
+	pub x: dim,
+	pub or: Orientation
+}
+
+
 //---- BoardMove -----------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -40,27 +48,33 @@ pub struct BoardMove<Move: AsRef<Placement>+Clone> {
 pub struct Board<'a, Move: AsRef<Placement>+Clone> {
 	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
 	pub moves: HashMap<PlacementId, BoardMove<Move>>,
-	rng: &'a mut AbstractRng
+	rng: &'a AbstractRng,
+	counter: usize
 }
 
 impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
-	pub fn new(h: dim, w: dim, rng: &'a mut AbstractRng) -> Board<'a, Move> {
-		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng }
+	pub fn new(h: dim, w: dim, rng: &'a AbstractRng) -> Board<'a, Move> {
+		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
 	}
 	
-	pub fn place(&mut self, seq: Vec<Move>) {
-		for (i, mv) in seq.into_iter().enumerate() {
-			let place_id = {
-				let place = mv.as_ref();
-				place.fold_positions((), |_, y, x| {
-					self.field[MatrixDim(y, x)].push(place.id);
-				});
-				place.id
-			};
-			let bmv = BoardMove { mv:mv, moves_idx: i, dependants: vec![] };
-			
-			self.moves.insert(place_id, bmv);
+	pub fn place_all(&mut self, seq: Vec<Move>) {
+		for mv in seq.into_iter() {
+			self.place(mv);
 		}
+	}
+	
+	pub fn place(&mut self, mv: Move) {
+		let place_id = {
+			let place = mv.as_ref();
+			place.fold_positions((), |_, y, x| {
+				self.field[MatrixDim(y, x)].push(place.id);
+			});
+			place.id
+		};
+		let bmv = BoardMove { mv:mv, moves_idx: self.counter, dependants: vec![] };
+		
+		self.moves.insert(place_id, bmv);
+		self.counter += 1;
 	}
 	
 	
@@ -95,6 +109,41 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		
 //		Eff(intersections - (self.moves.len() as eff_t))
 		Eff(intersections/2)
+	}
+	
+	
+	pub fn adjacencies_of(&self, mv: &Move) -> Vec<AdjacencyInfo> {
+		let place: &Placement = mv.as_ref();
+		
+		let perpOr = place.orientation.perp_orientation();
+		let perp = place.orientation.align(1, 0);
+		let (yd, xd) = (perp.0 as isize, perp.1 as isize);
+		let adjacencies = place.fold_positions(vec![], |mut adjacencies, y, x| {
+			// if there is an intersection at (x,y), it is impossible to have adjacency problems with the neighbours
+			if self.field[MatrixDim(y, x)].len() == 2 {
+				return adjacencies;
+			}
+			
+			// otherwise do the neighbour check
+			let (y0, x0) = (y as isize, x as isize);
+			let (y1, x1) = (y0 - yd, x0 - xd);
+			let (y2, x2) = (y0 + yd, x0 + xd);
+			
+			let (y1, x1) = (y1 as dim, x1 as dim);
+			let (y2, x2) = (y2 as dim, x2 as dim);
+			
+			if self.count_words_at(y1, x1) == 1 {
+				let adj = AdjacencyInfo { y:y1, x:x1, or:perpOr };
+				adjacencies.push(adj); 
+			} else if self.count_words_at(y2, x2) == 1 {
+				let adj = AdjacencyInfo { y:y, x:x, or:perpOr };
+				adjacencies.push(adj); 
+			}
+			
+			adjacencies
+		});
+		
+		adjacencies
 	}
 	
 	
@@ -189,34 +238,21 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	where Move: 'b
 	{
 		let adjacencies : HashSet<PlacementId> = suspect_moves.filter_map(|bmv| {
-			let place = bmv.mv.as_ref();
-			let perp = place.orientation.align(1, 0);
-			let (yd, xd) = (perp.0 as isize, perp.1 as isize);
-			let adj_found = place.fold_positions(false, |acc, y, x|
-				acc || {
-					// if there is an intersection at (x,y), it is impossible to have adjacency problems with the neighbours
-					if self.field[MatrixDim(y, x)].len() == 2 {
-						return false;
-					}
-					
-					// otherwise do the neighbour check
-					let (y, x) = (y as isize, x as isize);
-					let (y1, x1) = (y + yd, x + xd);
-					let (y2, x2) = (y - yd, x - xd);
-					let neighbours = [
-						self.field.get(MatrixDim(y1 as dim, x1 as dim)) as Option<&Vec<PlacementId>>,
-						self.field.get(MatrixDim(y2 as dim, x2 as dim))
-					];
-					
-					neighbours.iter().any(|optvec| optvec.map_or(false, |vec| vec.len()==1))
-				} 
-			);
-			
-			if adj_found { Some(place.id) }
-			else { None }
+			let neighbour_adjacencies = self.adjacencies_of(&bmv.mv);
+			if neighbour_adjacencies.len() > 0 {
+				let place = bmv.mv.as_ref();
+				Some(place.id)
+			} else { 
+				None 
+			}
 		}).collect();
 		
 		adjacencies
+	}
+	
+	fn count_words_at(&self, y: dim, x: dim) -> usize {
+		let words_opt = self.field.get(MatrixDim(y, x)) as Option<&Vec<PlacementId>>;
+		words_opt.map_or(0, |words| words.len())
 	}
 	
 

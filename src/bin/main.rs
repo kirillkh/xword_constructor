@@ -96,7 +96,7 @@ fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
 //	for mv in seq.iter() {
 //		board.place(mv); 
 //	}
-	board.place(seq.iter().collect());
+	board.place_all(seq.iter().collect());
 	
 	board.print();
 }

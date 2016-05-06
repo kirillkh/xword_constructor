@@ -4,8 +4,8 @@ extern crate rand;
 //pub mod board;
 pub mod fastmath;
 
+#[macro_use] mod common;
 mod constructor;
-mod common;
 mod board;
 
 pub use self::constructor::Constructor;

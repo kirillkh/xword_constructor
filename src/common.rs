@@ -13,12 +13,14 @@ pub type dim = Ix;
 pub struct MatrixDim(pub dim, pub dim);
 
 impl MatrixDim {
+	#[inline]
 	fn tuple(t: (dim, dim)) -> MatrixDim { MatrixDim(t.0, t.1) }
 }
 
 impl Index<usize> for MatrixDim {
     type Output = dim;
 
+	#[inline]
     fn index(&self, index: usize) -> &Self::Output {
 		match index {
 			0 => &self.0,
@@ -35,6 +37,7 @@ unsafe impl Dimension for MatrixDim {
 	#[inline]
 	fn ndim(&self) -> usize { 2 }
 	
+	#[inline]
     fn size(&self) -> usize {
     	self.0 * self.1
     }
@@ -43,6 +46,7 @@ unsafe impl Dimension for MatrixDim {
 impl RemoveAxis for MatrixDim {
     type Smaller = LineDim;
     
+	#[inline]
     fn remove_axis(&self, axis: Axis) -> Self::Smaller {
 //    	if let Axis(1) = axis {
 //    		
@@ -73,6 +77,7 @@ unsafe impl Dimension for LineDim {
 impl Deref for LineDim {
 	type Target = dim;
 	
+	#[inline]
     fn deref(&self) -> &Self::Target {
     	&self.0
     }
@@ -92,6 +97,7 @@ impl Word {
 		Word { id:id, str: Rc::new(str) }
 	}
 	
+	#[inline]
 	pub fn len(&self) -> dim {
 		self.str.len() as dim
 	}
@@ -100,6 +106,7 @@ impl Word {
 impl ::std::ops::Index<dim> for Word {
 	type Output = u8;
 	
+	#[inline]
     fn index(&self, index: dim) -> &Self::Output {
     	&self.str[index as usize]
     }
@@ -114,11 +121,18 @@ pub enum Orientation {
 }
 
 impl Orientation {
+	#[inline]
 	pub fn values() -> &'static [Orientation] { 
 		static VALUES : &'static [Orientation] = &[Orientation::VER, Orientation::HOR];
 		VALUES
 	}
 	
+	#[inline]
+	pub fn perp_orientation(self) -> Orientation {
+		Self::values()[1 - (self as dim)] 
+	}
+	
+	#[inline]
 	pub fn align(self, v: dim, u: dim) -> (dim, dim) {
 		let d0 = self as dim;
 		let d1 = 1 - d0;
@@ -151,6 +165,7 @@ impl Placement {
 		Placement { id:id, orientation:orientation, y:y, x:x, word:word }
 	}
 	
+	#[inline]
 	pub fn align(&self, or: Orientation) -> (dim, dim) {
 		or.align(self.y, self.x)
 	}
@@ -165,6 +180,15 @@ impl Placement {
 			acc = f(acc, y + i.cond(yc), x + i.cond(xc));
 		}
 		acc
+	}
+	
+	#[inline]
+	pub fn contains(&self, y: dim, x: dim) -> bool {
+		let (yc, xc) = self.orientation.align(0, 1);
+		let len = self.word.len();
+		
+		self.x <= x && x < self.x + len.cond(xc) + 1.cond(yc) &&
+		self.y <= y && y < self.y + len.cond(yc) + 1.cond(xc)
 	}
 	
 	pub fn compatible(&self, other: &Placement) -> bool {
@@ -203,6 +227,7 @@ impl Placement {
 }
 
 impl AsRef<Placement> for Placement {
+	#[inline]
 	fn as_ref(&self) -> &Placement { &self }
 }
 
@@ -229,6 +254,7 @@ impl Problem {
 //}
 
 trait Cond {
+	#[inline]
 	fn cond(self, flag: Self) -> Self;
 }
 
@@ -240,6 +266,7 @@ trait Cond {
 //}
 
 impl Cond for dim {
+	#[inline]
 	fn cond(self, flag: Self) -> Self {
 		let (a, f) = (self as i64, flag as i64);
 		(a & -f) as Self
@@ -250,34 +277,45 @@ impl Cond for dim {
 
     
 pub trait AbstractRng {
-    fn gen_f32(&mut self, between: Range<f32>) -> f32;
-    fn gen_usize(&mut self, between: Range<usize>) -> usize;
-    fn gen_u8(&mut self, between: Range<u8>) -> u8;
+	fn clone_to_box(&self) -> Box<AbstractRng>;
+    fn gen_f32(&self, between: Range<f32>) -> f32;
+    fn gen_usize(&self, between: Range<usize>) -> usize;
+    fn gen_u8(&self, between: Range<u8>) -> u8;
 }
 
 
-struct XRng<R: Rng>(R);
+#[derive(Clone)]
+struct TLRng;
 
-impl<R: Rng> AbstractRng for XRng<R> {
-    fn gen_f32(&mut self, between: Range<f32>) -> f32 {
-        between.ind_sample(&mut self.0)
+impl AbstractRng for TLRng {
+	#[inline]
+	fn clone_to_box(&self) -> Box<AbstractRng> {
+		Box::new(self.clone())
+	}
+	
+	#[inline]
+    fn gen_f32(&self, between: Range<f32>) -> f32 {
+        between.ind_sample(&mut thread_rng())
     }
     
-    fn gen_usize(&mut self, between: Range<usize>) -> usize {
-        between.ind_sample(&mut self.0)
+	#[inline]
+    fn gen_usize(&self, between: Range<usize>) -> usize {
+        between.ind_sample(&mut thread_rng())
     }
     
-    fn gen_u8(&mut self, between: Range<u8>) -> u8 {
-        between.ind_sample(&mut self.0)
+	#[inline]
+    fn gen_u8(&self, between: Range<u8>) -> u8 {
+        between.ind_sample(&mut thread_rng())
     }
 }
+
 
 
 
 pub fn make_rng() -> Box<AbstractRng> {
 //	let seed: [u32;4] = [1, 2, 3, 555];
 //	Box::new(XRng(XorShiftRng::from_seed(seed)))
-	Box::new(XRng(thread_rng()))
+	Box::new(TLRng)
 }
 
 
@@ -315,6 +353,24 @@ pub fn filter_indices<T> (mut items: Vec<T>, indices: &[usize]) -> (Vec<T>, Vec<
 	let excl = items.split_off(j);
 	(items, excl)
 }
+
+
+
+macro_rules! if_let {
+    ($x:pat = $e:expr => $a:block else $b:block) => {{
+        let opt_value = if let $x = $e {
+            Some($a)
+        } else {
+            None
+        };
+        if let Some(x) = opt_value {
+            x
+        } else {
+            $b
+        }
+    }}
+}
+
 
 
 
