@@ -15,7 +15,7 @@ The project builds two binaries: probgen and xword.
 The grid shape contains two kinds of characters: "_" means "empty cell", "#" means "blocked cell". The constructor's job is to produce 
 a valid crossword by placing as many words from the dictionary into the empty cells as possible. The constructor will print intermediate results to stdout once in a while and, after a set number of iterations (currently hardcoded), it will output the final result as two grids: one for horizontal and another for vertical words.
 
-**probgen** generates problems. To generate a problem, run probgen without parameters. The output will be written into out_problem.xword file. 
+**probgen** generates problems. To generate a problem, run probgen without parameters. The output will be written into out_problem.xword. 
 To customize the template, edit the template.xtempl file. There are 3 characters that you can put in every cell of the template grid:
 - "_" means "generate an empty cell with a random character"
 - "#" means "generate a blocked cell"
