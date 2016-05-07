@@ -21,10 +21,7 @@ To customize the template, edit the template.xtempl file. There are 3 characters
 - "#" means "generate a blocked cell"
 - "*" means "generate an empty cell wihout a character"
 
-Currently we only support very small dictionaries (hundreds of words).
-
-
 Implementation notes:
-
+- Currently we only support very small dictionaries (hundreds of words).
 - Most customization parameters are currently hardcoded as constants in constructor.rs. 
 - Lacks time limit functionality (will perform NRPA_ITERS iterations at each one of NRPA_LEVEL levels of recursion).
