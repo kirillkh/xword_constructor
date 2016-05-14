@@ -16,17 +16,19 @@ name = "probgen"
 path = "src/bin/problem_gen.rs"
 
 
+
 [dependencies]
 ndarray = "0.4"
 rand = "0.3"
 regex = "0.1"
 getopts = "0.2"
+fnv = "1.0.2"
 
 [profile.release]
 opt-level = 3
-debug = true
+debug = false
 rpath = false
-lto = false
+lto = true
 debug-assertions = false
 codegen-units = 1
 

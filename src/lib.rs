@@ -1,5 +1,9 @@
+#![feature(test)]
+
 extern crate ndarray;
 extern crate rand;
+extern crate test;
+extern crate fnv;
 
 //pub mod board;
 pub mod fastmath;
@@ -7,6 +11,7 @@ pub mod fastmath;
 #[macro_use] mod common;
 mod constructor;
 mod board;
+mod global2;
 
 pub use self::constructor::Constructor;
 pub use self::board::Board;
