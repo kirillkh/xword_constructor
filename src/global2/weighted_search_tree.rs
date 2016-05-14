@@ -28,14 +28,14 @@ struct Node<S: Span> {
 
 
 #[derive(Debug)]
-pub struct SelectableMoves<S: Span> {
+pub struct WeightedSearchTree<S: Span> {
     data: Vec<Node<S>>,
     // mapping from item keys to node array indices 
     keys: HashMap<i32, usize, MHasher>,
 }
 
-impl<S: Span> SelectableMoves<S> {
-    pub fn new(items: Vec<S>) -> SelectableMoves<S> {
+impl<S: Span> WeightedSearchTree<S> {
+    pub fn new(items: Vec<S>) -> WeightedSearchTree<S> {
         let mut keys: HashMap<i32, usize, MHasher> = Self::make_hash_map(items.len());
         for (i, item) in items.iter().enumerate() {
             keys.insert(item.key(), i);
@@ -48,7 +48,7 @@ impl<S: Span> SelectableMoves<S> {
             }
         ).collect();
         
-        let mut sm = SelectableMoves { data:nodes, keys:keys };
+        let mut sm = WeightedSearchTree { data:nodes, keys:keys };
         let levels = sm.levels_count();
         let len = sm.data.len();
         
@@ -322,7 +322,7 @@ fn right<S: Span>(node: &Node<S>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::SelectableMoves;
+    use super::WeightedSearchTree;
     use super::Span;
     use test::Bencher;
     use test::black_box;
@@ -355,12 +355,12 @@ mod tests {
         v.into_iter().map(|k| Item0::new(k)).collect::<Vec<_>>()
     }
     
-    fn sm_items(v: Vec<i32>) -> SelectableMoves<Item0> {
+    fn sm_items(v: Vec<i32>) -> WeightedSearchTree<Item0> {
         let items = items(v);
-        SelectableMoves::new(items)
+        WeightedSearchTree::new(items)
     }
     
-    fn check_tree<S: Span>(sm: &mut SelectableMoves<S>) -> bool {
+    fn check_tree<S: Span>(sm: &mut WeightedSearchTree<S>) -> bool {
         for i in (0..sm.data.len()).rev() {
             let old = sm.data[i].total;
             sm.update_node(i);
@@ -389,7 +389,7 @@ mod tests {
     
     
     
-    fn new_n_testcase(nkeys: usize) -> SelectableMoves<Item0> {
+    fn new_n_testcase(nkeys: usize) -> WeightedSearchTree<Item0> {
         let keys = (0..nkeys as i32).into_iter().collect::<Vec<i32>>();
         sm_items(keys)
     }
