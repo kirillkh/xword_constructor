@@ -12,30 +12,30 @@ use fnv::FnvHasher;
 type MHasher = BuildHasherDefault<FnvHasher>; // remove_n_bench(): 7.5 ms/iter
 
 
-pub trait Span {
+pub trait Item {
     #[inline]
     fn key(&self) -> i32;
     #[inline]
-    fn value(&self) -> f32;
+    fn weight(&self) -> f32;
 }
 
 #[derive(Debug)]
-struct Node<S: Span> {
+struct Node<W: Item> {
     idx: usize,
-    span: S,
+    item: W,
     total: f32
 }
 
 
 #[derive(Debug)]
-pub struct WeightedSearchTree<S: Span> {
-    data: Vec<Node<S>>,
+pub struct WeightedSelectionTree<W: Item> {
+    data: Vec<Node<W>>,
     // mapping from item keys to node array indices 
     keys: HashMap<i32, usize, MHasher>,
 }
 
-impl<S: Span> WeightedSearchTree<S> {
-    pub fn new(items: Vec<S>) -> WeightedSearchTree<S> {
+impl<W: Item> WeightedSelectionTree<W> {
+    pub fn new(items: Vec<W>) -> WeightedSelectionTree<W> {
         let mut keys: HashMap<i32, usize, MHasher> = Self::make_hash_map(items.len());
         for (i, item) in items.iter().enumerate() {
             keys.insert(item.key(), i);
@@ -43,12 +43,12 @@ impl<S: Span> WeightedSearchTree<S> {
         
         let nodes = items.into_iter().enumerate().map(
             |(i, it)| {
-                let value = it.value();
-                Node { idx:i, span:it, total:value }
+                let weight = it.weight();
+                Node { idx:i, item:it, total:weight }
             }
         ).collect();
         
-        let mut sm = WeightedSearchTree { data:nodes, keys:keys };
+        let mut sm = WeightedSelectionTree { data:nodes, keys:keys };
         let levels = sm.levels_count();
         let len = sm.data.len();
         
@@ -69,6 +69,10 @@ impl<S: Span> WeightedSearchTree<S> {
     
     pub fn total(&self) -> f32 {
         self.data[0].total
+    }
+    
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
     
     fn make_hash_map(n: usize) -> HashMap<i32, usize, MHasher> {
@@ -120,7 +124,7 @@ impl<S: Span> WeightedSearchTree<S> {
         for (i, item) in displaced_filtered.into_iter().enumerate() {
             let idx = rm_indices[i];
             upd_set.insert(idx);
-            self.data[idx].span = item;
+            self.data[idx].item = item;
         }
          
         // 4. update order statistics bottom-up, level by level 
@@ -156,7 +160,7 @@ impl<S: Span> WeightedSearchTree<S> {
     }
     
     
-    pub fn remove_last_n(&mut self, n: usize) -> Vec<S> {
+    pub fn remove_last_n(&mut self, n: usize) -> Vec<W> {
         let len = self.data.len();
         let mut upd_from = len - n;
         let mut upd_to = len;
@@ -164,7 +168,7 @@ impl<S: Span> WeightedSearchTree<S> {
         let mut displaced_items = Vec::with_capacity(n);
         for i in upd_from..upd_to {
             let node = self.data.pop().unwrap();
-            displaced_items.push(node.span);
+            displaced_items.push(node.item);
         }
         
         while upd_from != 0 {
@@ -184,7 +188,7 @@ impl<S: Span> WeightedSearchTree<S> {
     
     
     
-    pub fn select_remove(&mut self, x: f32) -> Option<S> {
+    pub fn select_remove(&mut self, x: f32) -> Option<W> {
         let idx = self.find(x, 0);
         let len = self.data.len();
         
@@ -226,20 +230,20 @@ impl<S: Span> WeightedSearchTree<S> {
     }
     
     
-    fn remove(&mut self, idx: usize) -> S {
+    fn remove(&mut self, idx: usize) -> W {
         let last = self.remove_last();
-        let removed = ::std::mem::replace(&mut self.data[idx].span, last);
+        let removed = ::std::mem::replace(&mut self.data[idx].item, last);
         self.update_ancestors(idx);
         
         removed
     }
     
-    fn remove_last(&mut self) -> S {
+    fn remove_last(&mut self) -> W {
         let curr = self.data.len() - 1;
         let node = self.data.remove(curr);
         self.update_ancestors(parenti(curr));
         
-        node.span
+        node.item
     }
     
     fn update_ancestors(&mut self, idx: usize) {
@@ -263,7 +267,7 @@ impl<S: Span> WeightedSearchTree<S> {
     
     #[inline]
     unsafe fn score_at_unchecked(&self, idx: usize) -> f32 {
-        self.data[idx].span.value()
+        self.data[idx].item.weight()
     }
     
     #[inline]
@@ -310,11 +314,11 @@ fn righti(idx: usize) -> usize {
 }
 
 
-fn left<S: Span>(node: &Node<S>) -> usize {
+fn left<W: Item>(node: &Node<W>) -> usize {
     lefti(node.idx)
 }
 
-fn right<S: Span>(node: &Node<S>) -> usize {
+fn right<W: Item>(node: &Node<W>) -> usize {
     righti(node.idx)
 }
 
@@ -322,32 +326,32 @@ fn right<S: Span>(node: &Node<S>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::WeightedSearchTree;
-    use super::Span;
+    use super::WeightedSelectionTree;
+    use super::Item;
     use test::Bencher;
     use test::black_box;
     
     #[derive(Debug, PartialEq)]
     struct Item0 {
         key: i32,
-        value: f32
+        weight: f32
     }
     
     impl Item0 {
         fn new(key: i32) -> Item0 {
-            Item0 { key:key, value: key as f32 }
+            Item0 { key:key, weight: key as f32 }
         }
     }
     
-    impl Span for Item0 {
+    impl Item for Item0 {
         #[inline]
         fn key(&self) -> i32 {
             self.key
         }
         
         #[inline]
-        fn value(&self) -> f32 {
-            self.value
+        fn weight(&self) -> f32 {
+            self.weight
         }
     }
     
@@ -355,12 +359,12 @@ mod tests {
         v.into_iter().map(|k| Item0::new(k)).collect::<Vec<_>>()
     }
     
-    fn sm_items(v: Vec<i32>) -> WeightedSearchTree<Item0> {
+    fn sm_items(v: Vec<i32>) -> WeightedSelectionTree<Item0> {
         let items = items(v);
-        WeightedSearchTree::new(items)
+        WeightedSelectionTree::new(items)
     }
     
-    fn check_tree<S: Span>(sm: &mut WeightedSearchTree<S>) -> bool {
+    fn check_tree<W: Item>(sm: &mut WeightedSelectionTree<W>) -> bool {
         for i in (0..sm.data.len()).rev() {
             let old = sm.data[i].total;
             sm.update_node(i);
@@ -389,7 +393,7 @@ mod tests {
     
     
     
-    fn new_n_testcase(nkeys: usize) -> WeightedSearchTree<Item0> {
+    fn new_n_testcase(nkeys: usize) -> WeightedSelectionTree<Item0> {
         let keys = (0..nkeys as i32).into_iter().collect::<Vec<i32>>();
         sm_items(keys)
     }
@@ -432,7 +436,7 @@ mod tests {
         let mut present = vec![false; nkeys];
          
         for node in sm.data.iter() {
-            present[node.span.key as usize] = true; 
+            present[node.item.key as usize] = true; 
         }
         assert!(present == should_be_present);
         assert!(check_tree(&mut sm));
