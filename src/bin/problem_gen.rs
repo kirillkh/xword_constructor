@@ -41,7 +41,7 @@ fn print(filled: &OwnedArray<u8, MatrixDim>) {
 }
 
 fn fill(templ: &mut OwnedArray<u8, MatrixDim>) {
-	let mut rng = make_rng();
+	let rng = make_rng();
 	let range = Range::new(b'a', b'z');
 	
 	for j in 0..templ.dim()[0] {

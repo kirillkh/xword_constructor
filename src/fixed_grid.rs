@@ -1,18 +1,21 @@
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
 use ndarray::OwnedArray;
-use common::{dim, Placement, PlacementId, MatrixDim, filter_indices, Orientation, AbstractRng};
+use common::{dim, Placement, PlacementId, MatrixDim, Orientation, AbstractRng};
 
-use rand::distributions::{IndependentSample, Range};
-use rand::Rng;
+use rand::distributions::Range;
+
+
+pub trait PlaceMove {
+    fn place(&self) -> &Placement;
+}
 
 
 //---- Eff -----------------------------------------------------------------------------
 #[allow(non_camel_case_types)]
 pub type eff_t = i32;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Eff(pub eff_t);
 
 impl Deref for Eff {
@@ -33,28 +36,28 @@ pub struct AdjacencyInfo {
 }
 
 
-//---- BoardMove -----------------------------------------------------------------------
+//---- FixedGridMove -----------------------------------------------------------------------
 
 #[derive(Clone)]
-pub struct BoardMove<Move: AsRef<Placement>+Clone> {
+pub struct FixedGridMove<Move: PlaceMove> {
 	pub mv: Move,
 	moves_idx: usize,
 	dependants: Vec<PlacementId>
 }
 
 
-//---- Board ---------------------------------------------------------------------------
+//---- FixedGrid ---------------------------------------------------------------------------
 
-pub struct Board<'a, Move: AsRef<Placement>+Clone> {
+pub struct FixedGrid<'a, Move: PlaceMove> {
 	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
-	pub moves: HashMap<PlacementId, BoardMove<Move>>,
+	pub moves: HashMap<PlacementId, FixedGridMove<Move>>,
 	rng: &'a AbstractRng,
 	counter: usize
 }
 
-impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
-	pub fn new(h: dim, w: dim, rng: &'a AbstractRng) -> Board<'a, Move> {
-		Board { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
+impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
+	pub fn new(h: dim, w: dim, rng: &'a AbstractRng) -> FixedGrid<'a, Move> {
+		FixedGrid { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
 	}
 	
 	pub fn place_all(&mut self, seq: Vec<Move>) {
@@ -65,23 +68,23 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	
 	pub fn place(&mut self, mv: Move) {
 		let place_id = {
-			let place = mv.as_ref();
+			let place: &Placement = mv.place();
 			place.fold_positions((), |_, y, x| {
 				self.field[MatrixDim(y, x)].push(place.id);
 			});
 			place.id
 		};
-		let bmv = BoardMove { mv:mv, moves_idx: self.counter, dependants: vec![] };
+		let bmv = FixedGridMove { mv:mv, moves_idx: self.counter, dependants: vec![] };
 		
 		self.moves.insert(place_id, bmv);
 		self.counter += 1;
 	}
 	
 	
-	pub fn delete(&mut self, id: PlacementId) -> Option<BoardMove<Move>> {
+	pub fn delete(&mut self, id: PlacementId) -> Option<FixedGridMove<Move>> {
 		let bmv = self.moves.remove(&id);
 		if let Some(ref bmv) = bmv {
-			let place = bmv.mv.as_ref();
+			let place = bmv.mv.place();
 			place.fold_positions((), |_, y, x| {
 					let items = &mut self.field[MatrixDim(y, x)];
 					if items.len() == 0 {
@@ -101,7 +104,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	/// Returns 1 for every letter intersected on the board.
 	pub fn efficiency(&self) -> Eff {
 		let intersections = self.moves.values().fold(0, |acc, bmv| { 
-				let place = bmv.mv.as_ref();
+				let place = bmv.mv.place();
 				place.fold_positions(acc, |acc, y, x| {
 					acc + self.field[MatrixDim(y, x)].len() - 1
 				})
@@ -112,10 +115,10 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	}
 	
 	
-	pub fn adjacencies_of(&self, mv: &Move) -> Vec<AdjacencyInfo> {
-		let place: &Placement = mv.as_ref();
+	pub fn adjacencies_of(&self, id: PlacementId) -> Vec<AdjacencyInfo> {
+		let place: &Placement = &(self.moves[&id].mv.place());
 		
-		let perpOr = place.orientation.perp_orientation();
+		let perp_or = place.orientation.perp_orientation();
 		let perp = place.orientation.align(1, 0);
 		let (yd, xd) = (perp.0 as isize, perp.1 as isize);
 		let adjacencies = place.fold_positions(vec![], |mut adjacencies, y, x| {
@@ -132,11 +135,10 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 			let (y1, x1) = (y1 as dim, x1 as dim);
 			let (y2, x2) = (y2 as dim, x2 as dim);
 			
-			if self.count_words_at(y1, x1) == 1 {
-				let adj = AdjacencyInfo { y:y1, x:x1, or:perpOr };
-				adjacencies.push(adj); 
-			} else if self.count_words_at(y2, x2) == 1 {
-				let adj = AdjacencyInfo { y:y, x:x, or:perpOr };
+			if self.count_words_at(y1, x1) == 1 ||
+    		   self.count_words_at(y2, x2) == 1 {
+		       // we currently unify the two cases; if we need to disambiguate in future, we can add another field to AdjacencyInfo 
+				let adj = AdjacencyInfo { y:y, x:x, or:perp_or };
 				adjacencies.push(adj); 
 			}
 			
@@ -147,7 +149,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	}
 	
 	
-	pub fn fixup_adjacent(&mut self) -> Vec<Move> {
+	pub fn fixup_adjacent(mut self) -> (Vec<Move>, Eff) {
 		// 1. build the dependency graph, so that when we start removing Moves, we know exactly which other Moves we're breaking
 		struct AdjacencyTracker {
 			last_isection: Option<PlacementId>,
@@ -158,7 +160,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 		
 		for (&id, bmv) in self.moves.iter() {
 			let init = AdjacencyTracker { last_isection: None, added_last: false };
-			let place = bmv.mv.as_ref();
+			let place = bmv.mv.place();
 			place.fold_positions(init, |adjacency, y, x| {
 				let placements = &self.field[MatrixDim(y, x)];
 				if placements.len() == 2 {
@@ -194,7 +196,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 //		let mut rng = rand::thread_rng();
 
 		while !adjacencies.is_empty() {
-			let mut adj_vec : Vec<_> = adjacencies.into_iter().collect();
+			let adj_vec : Vec<_> = adjacencies.into_iter().collect();
 			if cfg!(feature = "debug_rng") {
 //				adj_vec.sort();
 			}
@@ -203,7 +205,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 					
 					let out : Vec<_> = 
 						if v==0 {
-							let bmv : Option<BoardMove<Move>> = self.delete(adj);
+							let bmv : Option<FixedGridMove<Move>> = self.delete(adj);
 							if let Some(bmv) = bmv {
 								bmv.dependants
 							} else {
@@ -219,11 +221,17 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 								  	  .filter(|dep| self.moves.contains_key(&dep))
 								      .map(|adj| &self.moves[&adj]);
 			adjacencies = self.find_adjacencies(suspects);
-		};
+		}
 		
-		let mut fixed : Vec<_> = self.moves.values().cloned().collect();
-		fixed.sort_by(|bmv1, bmv2| bmv1.moves_idx.cmp(&bmv2.moves_idx));
-		fixed.into_iter().map(|bmv| bmv.mv).collect()
+		let eff = self.efficiency();
+		
+		let mut valid : Vec<_> = self.moves.drain()
+                                    	   .map(|(_, bmv)| (bmv.mv, bmv.moves_idx))
+                                    	   .collect();
+		valid.sort_by(|&(_, idx1), &(_, idx2)| idx1.cmp(&idx2));
+		let valid_moves = valid.into_iter().map(|(mv, _)| mv).collect();
+		
+		(valid_moves, eff)
 //		
 //		let (fixed_moves, fixed_indices) : (Vec<_>, Vec<_>) = 
 //			fixed.into_iter()
@@ -234,13 +242,13 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 	}
 	
 	
-	fn find_adjacencies<'b, Iter: Iterator<Item=&'b BoardMove<Move>>>(&self, suspect_moves: Iter) -> HashSet<PlacementId>
+	fn find_adjacencies<'b, Iter: Iterator<Item=&'b FixedGridMove<Move>>>(&self, suspect_moves: Iter) -> HashSet<PlacementId>
 	where Move: 'b
 	{
 		let adjacencies : HashSet<PlacementId> = suspect_moves.filter_map(|bmv| {
-			let neighbour_adjacencies = self.adjacencies_of(&bmv.mv);
+			let neighbour_adjacencies = self.adjacencies_of(bmv.mv.place().id);
 			if neighbour_adjacencies.len() > 0 {
-				let place = bmv.mv.as_ref();
+				let place = bmv.mv.place();
 				Some(place.id)
 			} else { 
 				None 
@@ -262,7 +270,7 @@ impl<'a, Move: AsRef<Placement>+Clone> Board<'a, Move> {
 			for i in 0..field.dim()[1] {
 				let opt_pid = field[MatrixDim(j, i)].first();
 				if let Some(pid) = opt_pid {
-						let plc = &self.moves[pid].mv.as_ref();
+						let plc = &self.moves[pid].mv.place();
 						
 						match plc.orientation {
 							Orientation::VER =>

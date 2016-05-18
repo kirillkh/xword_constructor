@@ -1,9 +1,11 @@
 //---- Dim -------------------------------------------------------------------------------
-use std::ops::{Index, Deref};
+use std::ops::{Index, IndexMut, Deref};
 use std::rc::Rc;
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, OwnedArray};
 use rand::{SeedableRng, XorShiftRng, Rng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
+use global2::data::ScoredMove;
+use global2::weighted_selection_tree::Key;
 
 #[allow(non_camel_case_types)]
 pub type dim = Ix;
@@ -149,7 +151,85 @@ impl Orientation {
 
 
 //---- Placement -----------------------------------------------------------------------
-pub type PlacementId = u32;
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PlacementId(pub u32);
+
+//type PlacementId = u32;
+
+impl Key for PlacementId {
+    
+}
+
+impl Index<PlacementId> for [Placement] {
+    type Output = Placement;
+
+	#[inline]
+    fn index(&self, index: PlacementId) -> &Self::Output {
+		self.index(index.0 as usize)
+    }
+}
+
+impl Index<PlacementId> for Vec<Placement> {
+    type Output = Placement;
+
+	#[inline]
+    fn index(&self, index: PlacementId) -> &Self::Output {
+		self.index(index.0 as usize)
+    }
+}
+
+impl Index<PlacementId> for [ScoredMove] {
+    type Output = ScoredMove;
+
+	#[inline]
+    fn index(&self, index: PlacementId) -> &Self::Output {
+		self.index(index.0 as usize)
+    }
+}
+
+impl Index<PlacementId> for Vec<ScoredMove> {
+    type Output = ScoredMove;
+
+	#[inline]
+    fn index(&self, index: PlacementId) -> &Self::Output {
+		self.index(index.0 as usize)
+    }
+}
+
+impl IndexMut<PlacementId> for Vec<ScoredMove> {
+//    type Output = ScoredMove;
+
+	#[inline]
+    fn index_mut(&mut self, index: PlacementId) -> &mut Self::Output {
+		self.index_mut(index.0 as usize)
+    }
+}
+
+
+
+//impl ::std::ops::Index<PlacementId> for Vec<ScoredMove> {
+//    type Output = ScoredMove;
+//
+//    fn index(&self, index: PlacementId) -> &ScoredMove {
+//        &self[index.0 as usize]
+//    }
+//}
+
+//impl Index<PlacementId> for [Placement] {
+//impl<T: Index<usize, Output=Placement>> Index<PlacementId> for T {
+//    type Output = Placement;
+//
+//	#[inline]
+//    fn index(&self, index: PlacementId) -> &Self::Output {
+//		self.index(index.0 as usize)
+////        self.index(5)
+//    }
+//}
+
+
+
+
+
 
 #[derive(Clone, Debug)]
 pub struct Placement {
@@ -161,8 +241,8 @@ pub struct Placement {
 }
 
 impl Placement {
-	pub fn new(id: PlacementId, orientation: Orientation, y: dim, x: dim, word: Word) -> Placement {
-		Placement { id:id, orientation:orientation, y:y, x:x, word:word }
+	pub fn new(id: usize, orientation: Orientation, y: dim, x: dim, word: Word) -> Placement {
+		Placement { id:PlacementId(id as u32), orientation:orientation, y:y, x:x, word:word }
 	}
 	
 	#[inline]
@@ -202,22 +282,14 @@ impl Placement {
 		
 		if other.orientation == self.orientation {
 				u0 + len0	< u1 || u1 + len1	< u0 // other is right or left + gap
-//				u0 + len0	<= u1 || u1 + len1	<= u0 // other is right or left
 			||	v0 != v1							 // other is below or above
 		} else {
-//				v0 + 1 		< v1 || v1 + len1	< v0 // other is below or above + gap
-//			||	u0 + len0	< u1 || u1 + 1		< u0 // other is right or left + gap
-
 			!(
 					(v1 <= v0 + 1	&& v0		<= v1 + len1 &&	// other contains or touches self vertically
 					 u0 <= u1		&& u1 + 1 	<= u0 + len0) 	// other contains self horizontally
 				||	(v1 <= v0 && v0 + 1 <= v1 + len1 && 		// other contains self vertically
 					 (u1 + 1 == u0 || u0 + len0 == u1))			// other touches self horizontally
 			)
-
-				
-//				v0 + 1 		<= v1 || v1 + len1	<= v0 // other is below or above
-//			||	u0 + len0	<= u1 || u1 + 1		<= u0 // other is right or left
 			||	(									 // intersection
 				(u0 <= u1 && u1+1 <= u0+len0) && (v1 <= v0 && v0+1 <= v1+len1) &&
 				self.word[u1-u0] == other.word[v0-v1]
@@ -383,7 +455,7 @@ mod placement_tests {
 		Word::new(wid, str.to_vec().into_boxed_slice())
 	}
 	
-	fn place(pid: PlacementId, or: Orientation, y: dim, x: dim, word: Word) -> Placement {
+	fn place(pid: usize, or: Orientation, y: dim, x: dim, word: Word) -> Placement {
 		Placement::new(pid, or, y, x, word)
 	}
 	

@@ -17,7 +17,7 @@ use regex::bytes::Regex;
 
 use ndarray::{OwnedArray, Axis};
 
-use xword::{Board, Constructor, dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim, Problem};
+use xword::{FixedGrid, Constructor, dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim, Problem};
 use xword::util;
 
 fn main() {
@@ -38,7 +38,7 @@ fn with_opts(opts: Opts) {
     println!("DIC={:?}", dic_str);
     
 	let dim = problem.board.dim();
-	let seq = Constructor::new(dim.0, dim.1).construct(&placements);
+	let seq = Constructor::new(dim.0, dim.1, &placements).construct();
 //	println!("seq = {:?}", seq);
 	
 	for &or in Orientation::values() {
@@ -90,7 +90,7 @@ fn print_usage(program: &str, opts: &Options) {
 
 fn print_board(h: dim, w: dim, seq: Vec<Placement>) {
 	let mut rng = util::make_rng();
-	let mut board : Board<&Placement> = Board::new(h, w, &mut *rng);
+	let mut board : FixedGrid<&Placement> = FixedGrid::new(h, w, &mut *rng);
 //			static mut board: Board<Move> = Board::new(self.h, self.w);
 
 //	for mv in seq.iter() {
@@ -230,7 +230,7 @@ mod placement_tests {
 		let places = super::gen_placements(&problem);
 		
 		for (i, place) in places.into_iter().enumerate() {
-			assert_eq!(i, place.id as usize)
+			assert_eq!(i, place.id.0 as usize)
 		}
 	}
 }	
