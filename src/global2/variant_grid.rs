@@ -136,7 +136,7 @@ impl VariantGrid {
         
         // remove incompatible placements in the cell to the right of the placement (for horizontal orientation)
         if u0+len0 < maxu {
-            self.filter_incompat(place_y+dy, place_x+dx, &mut removed, |_| {
+            self.filter_incompat(place_y+dy*len0, place_x+dx*len0, &mut removed, |_| {
                 // any placement in this cell is incompatible
                 true
             });
@@ -163,7 +163,7 @@ impl VariantGrid {
         
         let to_remove: Vec<PlacementId> = self.field[MatrixDim(celly, cellx)]
                                               .iter()
-                                              .filter(|&&entry_id| 
+                                              .filter(|&&entry_id|
                                                   must_remove(&self.places[entry_id])
                                               )
                                               .cloned()
