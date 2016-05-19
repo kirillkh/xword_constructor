@@ -260,8 +260,8 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         let mut curr = root;
         let len = self.data.len();
         while curr < len {
-            let lefti = Self::lefti(root);
-            let righti = Self::righti(root);
+            let lefti = Self::lefti(curr);
+            let righti = Self::righti(curr);
         
             // does the current node's interval contain x?
             let self_score = unsafe { self.score_at_unchecked(curr) };
