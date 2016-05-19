@@ -3,6 +3,8 @@ use common::{dim, Placement, PlacementId, MatrixDim};
 use std::rc::Rc;
 use std::ops::{Index, IndexMut};
 
+const REMOVED: usize = !0;
+
 
 struct Entry {
     field_indices: Vec<usize>,
@@ -48,17 +50,15 @@ impl Entry {
 pub struct VariantGrid {
     entries: Vec<Entry>,
 	field: OwnedArray<Vec<PlacementId>, MatrixDim>,
-//    dic: &'a [Placement]
-    dic: Rc<Vec<Placement>>
+    places: Rc<Vec<Placement>>
 }
 
 impl VariantGrid {
-//    pub fn new(dic: &'a [Placement], h: dim, w: dim) -> VariantGrid {
-    pub fn new(dic: Rc<Vec<Placement>>, h: dim, w: dim) -> VariantGrid {
+    pub fn new(places: Rc<Vec<Placement>>, h: dim, w: dim) -> VariantGrid {
         let mut field = OwnedArray::default(MatrixDim(h, w));
-        let mut entries = dic.iter().map(|place| Entry::new(place)).collect::<Vec<Entry>>();
+        let mut entries = places.iter().map(|place| Entry::new(place)).collect::<Vec<Entry>>();
         
-        for (i, place) in dic.iter().enumerate() {
+        for (i, place) in places.iter().enumerate() {
             let entry = &mut entries[i];
             
             let(place_y, place_x) = (place.y, place.x);
@@ -70,17 +70,15 @@ impl VariantGrid {
             });
         }
         
-        VariantGrid { entries: entries, field: field, dic: dic }
+        VariantGrid { entries: entries, field: field, places: places }
     }
     
     pub fn iter_at(&self, y: dim, x: dim) -> ::std::slice::Iter<PlacementId> {
-//        let v: &Vec<PlacementId> = &self.field[MatrixDim(y, x)];
-//        Iter{ it:v.iter() }
         self.field[MatrixDim(y, x)].iter()
     }
     
     pub fn remove_incompat(&mut self, place_id: PlacementId) -> Vec<PlacementId> {
-        let dic = self.dic.clone();
+        let dic = self.places.clone();
         let place = &dic[place_id];
         let (place_y, place_x) = (place.y, place.x);
         let (dy, dx) = place.orientation.align(0, 1);
@@ -148,6 +146,12 @@ impl VariantGrid {
     }
     
     
+    // this is quite dirty
+    pub fn contains(&self, place_id: PlacementId) -> bool {
+        self.entries[place_id].field_indices[0] != REMOVED
+    }
+    
+    
     fn filter_incompat<F: Fn(&Placement) -> bool>(&mut self, celly: dim, cellx: dim, removed: &mut Vec<PlacementId>, must_remove: F) {
 //        for &entry_id in self.field[MatrixDim(celly, cellx)].iter() {
 //            let other = &self.dic[entry_id];
@@ -160,7 +164,7 @@ impl VariantGrid {
         let to_remove: Vec<PlacementId> = self.field[MatrixDim(celly, cellx)]
                                               .iter()
                                               .filter(|&&entry_id| 
-                                                  must_remove(&self.dic[entry_id])
+                                                  must_remove(&self.places[entry_id])
                                               )
                                               .cloned()
                                               .collect();
@@ -174,7 +178,7 @@ impl VariantGrid {
     pub fn remove(&mut self, entry_id: PlacementId) {
         // to satisfy the borrow checker, do 2 passes: first collect indices to remove, then remove them
         let to_remove = {
-            let place = &self.dic[entry_id];
+            let place = &self.places[entry_id];
             let (place_y, place_x) = (place.y, place.x);
             
             let entry = &self.entries[entry_id];
@@ -193,17 +197,17 @@ impl VariantGrid {
         for (y, x, char_idx, idx) in to_remove {
             let cell = &mut self.field[MatrixDim(y,x)];
             
-//            // DEBUG
-//            if idx == 999999 {
-//                panic!("aasdfasdf!");
-//            }
-//            self.entries[cell[idx]].field_indices[char_idx] = 999999;
+            // DEBUG
+            if idx == REMOVED {
+                panic!("removed!");
+            }
+            self.entries[cell[idx]].field_indices[char_idx] = REMOVED;
 
             cell.swap_remove(idx);
             
             if idx != cell.len() {
                 let swapped_id = cell[idx];
-                let swapped = &self.dic[swapped_id];
+                let swapped = &self.places[swapped_id];
                 let char_idx2 = y-swapped.y + x-swapped.x;
                 self.entries[swapped_id].field_indices[char_idx2] = idx;
             }

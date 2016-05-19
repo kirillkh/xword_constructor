@@ -38,7 +38,7 @@ fn with_opts(opts: Opts) {
     println!("DIC={:?}", dic_str);
     
 	let dim = problem.board.dim();
-	let seq = Constructor::new(dim.0, dim.1, &placements).construct();
+	let seq = Constructor::new(dim.0, dim.1, &problem.dic, &placements).construct();
 //	println!("seq = {:?}", seq);
 	
 	for &or in Orientation::values() {

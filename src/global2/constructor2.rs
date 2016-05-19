@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::Cell;
 use rand::distributions::Range;
 
-use common::{dim, Placement, PlacementId, make_rng, AbstractRng};
+use common::{dim, Placement, PlacementId, Word, WordId, make_rng, AbstractRng};
 use fastmath::fastexp;
 use fixed_grid::{FixedGrid, Eff, AdjacencyInfo, PlaceMove};
 use super::weighted_selection_tree::{WeightedSelectionTree, Item};
@@ -103,20 +103,27 @@ type ResolutionMap = WeightedSelectionTree<PlacementId, AdjacencyResolver>;
 
 
 pub struct Constructor {
-    dic: Rc<Vec<Placement>>,
+    places: Rc<Vec<Placement>>,
+    placements_per_word: Vec<Vec<PlacementId>>,  // TODO: we might want to dynamically remove placements in the algorithm
 	pub h: dim,
 	pub w: dim,
 	rng: Box<AbstractRng>
 }
 
 impl Constructor {
-	pub fn new(h: dim, w: dim, dic: &[Placement]) -> Constructor {
-	    let dic = dic.iter().cloned().collect::<Vec<_>>();
-		Constructor { dic:Rc::new(dic), h:h, w:w, rng:make_rng() }
+	pub fn new(h: dim, w: dim, dic: &[Word], places: &[Placement]) -> Constructor {
+	    let places = places.iter().cloned().collect::<Vec<_>>();
+	    
+	    let mut placements_per_word = vec![vec![]; dic.len()];
+	    for place in places.iter() {
+	        placements_per_word[place.word.id as usize].push(place.id); 
+	    }
+	    
+		Constructor { placements_per_word:placements_per_word, places:Rc::new(places), h:h, w:w, rng:make_rng() }
 	}
 	
 	pub fn construct(&mut self) -> Vec<Placement> {
-		let moves: Vec<_> = self.dic.iter().map(|p| ScoredMove { place:p.clone(), score: 0., exp_score: 1. }).collect();
+		let moves: Vec<_> = self.places.iter().map(|p| ScoredMove { place:p.clone(), score: 0., exp_score: 1. }).collect();
 		let (_, best_valid_seq) = self.nrpa(NRPA_LEVEL, &moves);
 		best_valid_seq.seq.into_iter().map(|mv| mv.0).collect()
 	}
@@ -194,7 +201,26 @@ impl Constructor {
 	}
 	
 	
-	fn remove_incompat(mv: &ScoredMove, grid: &mut VariantGrid, select_tree: &mut SelectTree, resolution_map: &mut ResolutionMap)  -> Vec<ScoredMove> {
+	fn remove_incompat(&self, mv: &ScoredMove, 
+                	   grid: &mut VariantGrid, 
+                	   select_tree: &mut SelectTree, 
+                	   resolution_map: &mut ResolutionMap)  -> Vec<ScoredMove> {
+	    // 1. remove all placements of this word
+	    let word_placements = &self.placements_per_word[mv.place.word.id as usize];
+	    let mut rmvd_word_moves = Vec::with_capacity(self.placements_per_word.len());
+	    for &pid in word_placements {
+	        if grid.contains(pid) {
+    	        grid.remove(pid);
+    	        let mv = if select_tree.contains_key(pid) {
+    	            select_tree.remove(pid)
+    	        } else {
+    	            resolution_map.remove(pid).mv
+    	        };
+	            rmvd_word_moves.push(mv);
+	        }
+	    }
+	    
+	    // 2. remove incompatible placements from the variant grid
 	    let incompat_ids = grid.remove_incompat(mv.place.id);
 	    
 	    let mut resolvers_to_rm: Vec<PlacementId> = vec![];
@@ -222,9 +248,11 @@ impl Constructor {
 	    }
 	    
 	    let mut rmvd_moves2: Vec<ScoredMove> = select_tree.remove_bulk(&*moves_to_rm);
-	    rmvd_moves2.append(&mut rmvd_moves);
 	    
-	    rmvd_moves2
+	    rmvd_word_moves.append(&mut rmvd_moves);
+	    rmvd_word_moves.append(&mut rmvd_moves2);
+	    
+	    rmvd_word_moves
 	}
 	
 	
@@ -243,7 +271,7 @@ impl Constructor {
 		grid.remove(mv.key());
 		
 		// 2. filter out incompatible placements (we must do this before the subsequent steps, because they depend on it)
-		let excl: Vec<ScoredMove> = Self::remove_incompat(&mv, grid, select_tree, resolution_map);
+		let excl: Vec<ScoredMove> = self.remove_incompat(&mv, grid, select_tree, resolution_map);
 		
 //		// 3. for every incompatible move, decrement its associated adjacency counters
 //		for exmv in excl.iter() {
@@ -339,7 +367,7 @@ impl Constructor {
 	fn nrpa_monte_carlo(&mut self, policy: &[ScoredMove]) -> (ChosenSequence, ChosenSequence) {
 		let rng = self.rng.clone_to_box();
 		let mut fixed_grid = FixedGrid::new(self.h, self.w, &*rng);
-        let mut variant_grid = VariantGrid::new(self.dic.clone(), self.h, self.w);
+        let mut variant_grid = VariantGrid::new(self.places.clone(), self.h, self.w);
 		let mut best_seq = ChosenSequence::default();
 		{
             let mut select_tree: SelectTree = SelectTree::new(policy);
@@ -347,7 +375,7 @@ impl Constructor {
 			let mut resolution_map: ResolutionMap = WeightedSelectionTree::new(&[]);
 			
 			// random rollout according to the policy
-			while !select_tree.is_empty() {
+			while !select_tree.is_empty() || !resolution_map.is_empty() {
 				let chosen = self.nrpa_choose(&mut select_tree, &mut variant_grid, &mut resolution_map);
 				{
 					// place the chosen move on the grid
@@ -409,7 +437,7 @@ impl Constructor {
 			ranks = ranks.into_iter().skip(skip).collect();
 			println!("top ranks: {:?}", ranks);
 			
-			let ranks : Vec<_> = new_seq.seq.iter().map(|cmv: &ChosenMove| (cmv.0.word.id, &moves[cmv.0.id])).collect();
+			let ranks : Vec<_> = new_seq.seq.iter().map(|cmv: &ChosenMove| (cmv.0.word.id, cmv.0.id.0, moves[cmv.0.id].score)).collect();
 			println!("new ranks: {:?}", ranks);
 			
 			let mut grid : FixedGrid<ChosenMove> = FixedGrid::new(self.h, self.w, &mut *self.rng);
