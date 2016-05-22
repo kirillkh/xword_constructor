@@ -207,7 +207,7 @@ impl Constructor {
                 	   resolution_map: &mut ResolutionMap)  -> Vec<ScoredMove> {
 	    // 1. remove all placements of this word
 	    let word_placements = &self.placements_per_word[mv.place.word.id as usize];
-	    let mut rmvd_word_moves = Vec::with_capacity(self.placements_per_word.len());
+	    let mut rmvd_word_moves = Vec::with_capacity(self.placements_per_word[mv.place.word.id as usize].len());
 	    for &pid in word_placements {
 	        if grid.contains(pid) {
     	        grid.remove(pid);
@@ -223,8 +223,8 @@ impl Constructor {
 	    // 2. remove incompatible placements from the variant grid
 	    let incompat_ids = grid.remove_incompat(mv.place.id);
 	    
-	    let mut resolvers_to_rm: Vec<PlacementId> = vec![];
-	    let mut moves_to_rm: Vec<PlacementId> = vec![];
+	    let mut resolvers_to_rm: Vec<PlacementId> = Vec::with_capacity(incompat_ids.len());
+	    let mut moves_to_rm: Vec<PlacementId> = Vec::with_capacity(incompat_ids.len());
 	    for pl_id in incompat_ids {
 	        if resolution_map.contains_key(pl_id) {
 	            resolvers_to_rm.push(pl_id);
@@ -249,6 +249,7 @@ impl Constructor {
 	    
 	    let mut rmvd_moves2: Vec<ScoredMove> = select_tree.remove_bulk(&*moves_to_rm);
 	    
+	    rmvd_word_moves.reserve_exact(rmvd_moves.len() + rmvd_moves2.len());
 	    rmvd_word_moves.append(&mut rmvd_moves);
 	    rmvd_word_moves.append(&mut rmvd_moves2);
 	    

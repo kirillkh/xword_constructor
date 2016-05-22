@@ -23,7 +23,6 @@ impl<T: Sized+Clone> SlicedArena<T> {
                 to
         });
         
-        let sum = sizes.iter().fold(0, |acc, s| acc+s);
         let mem = vec![Default::default(); sum];
         
         SlicedArena { mem:mem, slices:slices }
