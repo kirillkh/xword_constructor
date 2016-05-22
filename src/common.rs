@@ -6,6 +6,7 @@ use rand::{SeedableRng, XorShiftRng, Rng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use global2::data::ScoredMove;
 use global2::weighted_selection_tree::Key;
+use std::mem;
 
 #[allow(non_camel_case_types)]
 pub type dim = Ix;
@@ -155,6 +156,13 @@ impl Orientation {
 pub struct PlacementId(pub u32);
 
 //type PlacementId = u32;
+
+//impl PlacementId {
+//    #[inline]
+//    pub fn u(&self) -> usize {
+//        self.0 as usize
+//    }
+//}
 
 impl Key for PlacementId {
     
@@ -382,12 +390,49 @@ impl AbstractRng for TLRng {
 }
 
 
+#[derive(Clone)]
+struct XORRng(XorShiftRng);
+
+impl XORRng {
+    #[inline]
+    #[allow(mutable_transmutes)]
+    fn rng(&self) -> &mut XorShiftRng {
+//        let rng: &mut XorShiftRng = unsafe { mem::transmute(&self.0) };
+        unsafe { mem::transmute(&self.0) }
+    }
+    
+}
+
+impl AbstractRng for XORRng {
+	#[inline]
+	fn clone_to_box(&self) -> Box<AbstractRng> {
+		Box::new(self.clone())
+	}
+	
+	#[inline]
+    fn gen_f32(&self, between: Range<f32>) -> f32 {
+        between.ind_sample(self.rng())
+    }
+    
+	#[inline]
+    fn gen_usize(&self, between: Range<usize>) -> usize {
+        between.ind_sample(self.rng())
+    }
+    
+	#[inline]
+    fn gen_u8(&self, between: Range<u8>) -> u8 {
+        between.ind_sample(self.rng())
+    }
+}
+
+
 
 
 pub fn make_rng() -> Box<AbstractRng> {
-//	let seed: [u32;4] = [1, 2, 3, 555];
 //	Box::new(XRng(XorShiftRng::from_seed(seed)))
-	Box::new(TLRng)
+//	Box::new(TLRng)
+	let seed: [u32;4] = [27, 81, 3, 555];
+    Box::new(XORRng(XorShiftRng::from_seed(seed)))
 }
 
 

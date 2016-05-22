@@ -116,7 +116,7 @@ impl Constructor {
 	    
 	    let mut placements_per_word = vec![vec![]; dic.len()];
 	    for place in places.iter() {
-	        placements_per_word[place.word.id as usize].push(place.id); 
+	        placements_per_word[place.word.id as usize].push(place.id);
 	    }
 	    
 		Constructor { placements_per_word:placements_per_word, places:Rc::new(places), h:h, w:w, rng:make_rng() }
@@ -460,7 +460,7 @@ impl Constructor {
 //				ranks = ranks.into_iter().collect();
 //				println!("{:?}\n", ranks);
 			
-			let seq : Vec<_> = best_seq.seq.iter().map(|mv| &mv.1).collect();
+			let seq : Vec<_> = best_seq.seq.iter().map(|mv| &mv.0).collect();
 			println!("{:?}", seq);
 		}
 	}

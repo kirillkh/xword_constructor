@@ -2,61 +2,28 @@ use ndarray::OwnedArray;
 use common::{dim, Placement, PlacementId, MatrixDim};
 use std::rc::Rc;
 use std::ops::{Index, IndexMut};
+use super::sliced_arena::SlicedArena;
 
 const REMOVED: usize = !0;
 
 
-struct Entry {
-    field_indices: Vec<usize>,
-//    place_id: PlacementId
-}
-
-impl Entry {
-    fn new(place: &Placement) -> Entry {
-//        Entry { field_indices: vec![0; place.word.len()], place_id: place.id }
-        Entry { field_indices: vec![0; place.word.len()] }
-    }
-}
-
-//impl Index<PlacementId> for Vec<Entry> {
-//    type Output = Entry;
-//
-//	#[inline]
-//    fn index(&self, index: PlacementId) -> &Self::Output {
-//		self.index(index.0 as usize)
-//    }
-//}
-
-
-
-//pub struct Iter<'a> {
-//    it: ::std::slice::Iter<'a, PlacementId>
-//}
-//
-//impl<'a> Iterator for Iter<'a> {
-//    type Item = PlacementId;
-//    
-//    fn next(&mut self) -> Option<Self::Item> {
-//        if let Some(place) = self.it.next() {
-//            Some(entry.place_id)
-//        } else {
-//            None
-//        }
-//    }
-//}
-
-
 // TODO: rewrite using R-Tree or Interval Tree?
+#[derive(Clone)]
 pub struct VariantGrid {
-    entries: Vec<Entry>,
+//    entries: Vec<Entry<'a>>,
+//    entries_mem: Vec<usize>,
+    entries: SlicedArena<usize>,
+    
 	field: OwnedArray<Vec<PlacementId>, MatrixDim>,
     places: Rc<Vec<Placement>>
 }
 
 impl VariantGrid {
     pub fn new(places: Rc<Vec<Placement>>, h: dim, w: dim) -> VariantGrid {
+        let sizes = places.iter().map(|place| place.word.len()).collect::<Vec<_>>();
+        let mut entries = SlicedArena::new(&sizes);
+        
         let mut field = OwnedArray::default(MatrixDim(h, w));
-        let mut entries = places.iter().map(|place| Entry::new(place)).collect::<Vec<Entry>>();
         
         for (i, place) in places.iter().enumerate() {
             let entry = &mut entries[i];
@@ -65,7 +32,7 @@ impl VariantGrid {
             place.fold_positions((), |(), y, x| {
                 let cell_entries: &mut Vec<PlacementId> = &mut field[MatrixDim(y, x)];
                 let char_idx = y-place_y + x-place_x;
-                entry.field_indices[char_idx] = cell_entries.len();
+                entry[char_idx] = cell_entries.len();
                 cell_entries.push(PlacementId(i as u32));
             });
         }
@@ -148,7 +115,7 @@ impl VariantGrid {
     
     // this is quite dirty
     pub fn contains(&self, place_id: PlacementId) -> bool {
-        self.entries[place_id].field_indices[0] != REMOVED
+        self.entries[place_id][0] != REMOVED
     }
     
     
@@ -182,13 +149,13 @@ impl VariantGrid {
             let (place_y, place_x) = (place.y, place.x);
             
             let entry = &self.entries[entry_id];
-            let indices = &entry.field_indices;
+//            let indices = &entry.field_indices;
             
             let init = Vec::with_capacity(place.word.len());
             
             place.fold_positions(init, |mut acc, y, x| {
                 let char_idx = (y - place_y) + (x - place_x);
-                let idx = indices[char_idx];
+                let idx = entry[char_idx];
                 acc.push((y, x, char_idx, idx));
                 acc
             })
@@ -201,7 +168,7 @@ impl VariantGrid {
             if idx == REMOVED {
                 panic!("removed!");
             }
-            self.entries[cell[idx]].field_indices[char_idx] = REMOVED;
+            self.entries[cell[idx]][char_idx] = REMOVED;
 
             cell.swap_remove(idx);
             
@@ -209,15 +176,15 @@ impl VariantGrid {
                 let swapped_id = cell[idx];
                 let swapped = &self.places[swapped_id];
                 let char_idx2 = y-swapped.y + x-swapped.x;
-                self.entries[swapped_id].field_indices[char_idx2] = idx;
+                self.entries[swapped_id][char_idx2] = idx;
             }
         }
     }
 }
 
 
-impl Index<PlacementId> for Vec<Entry> {
-    type Output = Entry;
+impl<T: Sized+Clone> Index<PlacementId> for SlicedArena<T> {
+    type Output = [T];
 
 	#[inline]
     fn index(&self, index: PlacementId) -> &Self::Output {
@@ -225,7 +192,7 @@ impl Index<PlacementId> for Vec<Entry> {
     }
 }
 
-impl IndexMut<PlacementId> for Vec<Entry> {
+impl<T: Sized+Clone> IndexMut<PlacementId> for SlicedArena<T> {
 	#[inline]
     fn index_mut(&mut self, index: PlacementId) -> &mut Self::Output {
 		self.index_mut(index.0 as usize)
