@@ -207,7 +207,7 @@ impl Constructor {
                 	   resolution_map: &mut ResolutionMap)  -> Vec<ScoredMove> {
 	    // 1. remove all placements of this word
 	    let word_placements = &self.placements_per_word[mv.place.word.id as usize];
-	    let mut rmvd_word_moves = Vec::with_capacity(self.placements_per_word[mv.place.word.id as usize].len());
+	    let mut rmvd_word_moves = Vec::with_capacity(word_placements.len());
 	    for &pid in word_placements {
 	        if grid.contains(pid) {
     	        grid.remove(pid);
@@ -369,7 +369,7 @@ impl Constructor {
 		let rng = self.rng.clone_to_box();
 		let mut fixed_grid = FixedGrid::new(self.h, self.w, &*rng);
         let mut variant_grid = VariantGrid::new(self.places.clone(), self.h, self.w);
-		let mut best_seq = ChosenSequence::default();
+		let mut best_seq = ChosenSequence::new(Vec::with_capacity(self.placements_per_word.len()), Eff(0));
 		{
             let mut select_tree: SelectTree = SelectTree::new(policy);
             

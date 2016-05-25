@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::cmp::min;
 use std::mem::size_of;
 use std::mem;
@@ -30,6 +30,7 @@ pub trait Item<K: Key>: Clone {
 #[derive(Debug)]
 struct Node<K: Key, It: Item<K>> {
     idx: usize,
+    upd_marker: usize,
     item: It,
     total: f32,
     ph: PhantomData<K>
@@ -41,6 +42,8 @@ pub struct WeightedSelectionTree<K: Key, It: Item<K>> {
     data: Vec<Node<K, It>>,
     // mapping from item keys to node array indices 
     keys: HashMap<K, usize, MHasher>,
+    
+    upd_count: usize,
 }
 
 impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
@@ -53,11 +56,11 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         let nodes = items.iter().enumerate().map(
             |(i, it)| {
                 let weight = it.weight();
-                Node { idx:i, item:it.clone(), total:weight, ph:PhantomData }
+                Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph:PhantomData }
             }
         ).collect();
         
-        let mut sm = WeightedSelectionTree { data:nodes, keys:keys };
+        let mut sm = WeightedSelectionTree { data:nodes, upd_count:0, keys:keys };
         let levels = sm.levels_count();
         let len = sm.data.len();
         
@@ -82,6 +85,25 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         self.data.is_empty()
     }
     
+//    #[inline(never)]
+    fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<usize>) -> Vec<bool> {
+        let mut displaced_keep = vec![true; rm_indices.len()];
+        let new_len = self.data.len();
+        let mut i = 0;
+        while i < rm_indices.len() {
+            let idx = rm_indices[i];
+            if idx >= new_len {
+                rm_indices.swap_remove(i);
+                displaced_keep[idx - new_len] = false;
+            } else {
+                i += 1;
+            }
+        }
+        
+        displaced_keep
+    }
+
+    #[no_mangle]
     pub fn remove_bulk(&mut self, keys: &[K]) -> Vec<It> {
         if keys.is_empty() {
             return vec![];
@@ -100,21 +122,10 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         assert!(n <= len);
          
         // 1. remove the last n items and update their parents
-        let displaced_items = self.remove_last_n(n);
+        let displaced_items = self.displace_last_n(n);
         
         // 2. discard any items that were among the last n from rm_indices
-        let mut displaced_keep = vec![true; n];
-        let new_len = self.data.len();
-        let mut i = 0;
-        while i < rm_indices.len() {
-            let idx = rm_indices[i];
-            if idx >= new_len {
-                rm_indices.swap_remove(i);
-                displaced_keep[idx - new_len] = false;
-            } else {
-                i += 1;
-            }
-        }
+        let displaced_keep = self.remove_bulk__items_to_keep(&mut rm_indices);
          
         let mut displaced_filtered = Vec::with_capacity(n);
         for (i, item) in displaced_items.into_iter().enumerate() {
@@ -126,42 +137,85 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         assert!(displaced_filtered.len() == rm_indices.len());
         
         // 3. replace the removed items with the displaced ones and initialize the update set
-        let mut upd_set = Self::make_hash_set(displaced_filtered.len());
+        let mut upd_set = Vec::with_capacity(displaced_filtered.len());
         for (i, item) in displaced_filtered.into_iter().enumerate() {
             let idx = rm_indices[i];
-            upd_set.insert(idx);
+            upd_set.push(idx);
             self.keys.insert(item.key(), idx);
             mem::replace(&mut self.data[idx].item, item);
         }
-         
+        
+        self.upd_count += 1;
+        let upd_count = self.upd_count;
+        for &idx in upd_set.iter() {
+            self.data[idx].upd_marker = upd_count;
+        }
+        
         // 4. update order statistics bottom-up, level by level 
-        let mut upd_vec: Vec<usize> = Vec::with_capacity(upd_set.len());
+        self.remove_bulk_levels(&mut upd_set);
+        
+        removed
+    }
+    
+//    #[inline(never)]
+    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<usize>) {
+        let mut upd_set2 = Vec::with_capacity(upd_set.len());
         let levels = self.levels_count();
-
+        let upd_count = self.upd_count;
+        
         for level in (0..levels).rev() {
             let level_from = Self::level_from(level);
 
-            // move the indices into an array and clear the set
-            for idx in upd_set.drain() {
-                upd_vec.push(idx);
-            }
-            
-            for idx in upd_vec.drain(..) {
+            for idx in upd_set.drain(..) {
                 if idx >= level_from {
                     // the item is at the current level: update the node and insert its parent
                     self.update_node(idx);
                     if level > 0 {
-                        upd_set.insert(Self::parenti(idx));
+                        let parenti = Self::parenti(idx);
+                        if self.data[parenti].upd_marker != upd_count {
+                            self.data[parenti].upd_marker = upd_count;
+                            upd_set2.push(parenti);
+                        }
                     }
                 } else {
                     // the item is above the current level: just copy it verbatim for future processing
-                    upd_set.insert(idx);
+                    upd_set2.push(idx);
                 }
             }
+            
+            mem::swap(upd_set, &mut upd_set2);
         }
-        
-        removed
     }
+//    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<usize>, level_from: usize, level: usize) {
+//        let upd_count = self.upd_count;
+//        let mut i = 0;
+//        while i < upd_set.len() {
+//            let idx = upd_set[i];
+//            
+//            if idx >= level_from {
+//                // the item is at the current level: update the node and insert its parent
+//                self.update_node(idx);
+//                if level > 0 {
+//                    let parenti = Self::parenti(idx);
+//                    if self.data[parenti].upd_marker != upd_count {
+//                        self.data[parenti].upd_marker = upd_count;
+//                        upd_set[i] = parenti;
+//                        i += 1;
+//                    } else {
+//                        upd_set.swap_remove(i);
+////                        mem::swap(&mut upd_set.last(), idx);
+////                        let idx = upd_set.last();
+//                    }
+//                } else {
+//                    break;
+//                }
+//            } else {
+//                // the item is above the current level: just copy it verbatim for future processing
+//                i += 1;
+//            }
+//        }
+//    }
+    
     
     pub fn select_remove(&mut self, x: f32) -> Option<It> {
         let idx = self.find_idx(x, 0);
@@ -196,7 +250,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             None => {
                 let idx = self.data.len();
                 let weight = it.weight();
-                self.data.push(Node { idx:idx, item:it, total:weight, ph:PhantomData });
+                self.data.push(Node { idx:idx, upd_marker:self.upd_count, item:it, total:weight, ph:PhantomData });
                 self.keys.insert(k, idx);
                 (None, idx)
             } 
@@ -219,20 +273,13 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
-    fn remove_last_n(&mut self, n: usize) -> Vec<It> {
+//    #[inline(never)]
+    fn displace_last_n(&mut self, n: usize) -> Vec<It> {
         let len = self.data.len();
         let upd_from = len - n;
-        let upd_to = len;
+        let displaced_items = self.data.drain(upd_from..).map(|node| node.item).collect();
+        self.update_ancestors_bulk(upd_from, len);
         
-        let mut displaced_items = Vec::with_capacity(n);
-        for _ in upd_from..upd_to {
-            let node = self.data.pop().unwrap();
-            displaced_items.push(node.item);
-        }
-        
-        self.update_ancestors_bulk(upd_from, upd_to);
-        
-        displaced_items.reverse(); // make sure to preserve the order
         displaced_items
     }
     
@@ -247,7 +294,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             let idx = len + i;
             let old = self.keys.insert(key, idx);
             assert!(old.is_none());
-            self.data.push(Node { idx:idx,  total:it.weight(), item:it,ph: PhantomData });
+            self.data.push(Node { idx:idx, upd_marker:self.upd_count, total:it.weight(), item:it,ph: PhantomData });
         }
         
         self.update_range(upd_from, upd_to);
@@ -325,6 +372,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
     }
     
+//    #[inline(never)]
     fn update_ancestors_bulk(&mut self, mut changed_from: usize, mut changed_to: usize) {
         if changed_from == changed_to || changed_to <= 1 { return; }
         
@@ -347,6 +395,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     // We could just do "total += delta", but that would lead to unstable results due to limited fp precision as we add and remove nodes 
     // under a parent without touchging the parent itself. Prefer the safe way for now.
+    #[inline]
     fn update_node(&mut self, idx: usize) {
         self.data[idx].total = 
             unsafe { self.score_at_unchecked(idx) } +
@@ -403,12 +452,9 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     fn make_hash_map(n: usize) -> HashMap<K, usize, MHasher> {
-        HashMap::with_capacity_and_hasher(n.next_power_of_two(), Default::default())
+        HashMap::with_capacity_and_hasher(2*n.next_power_of_two(), Default::default())
     }
     
-    fn make_hash_set(n: usize) -> HashSet<usize, MHasher> {
-         HashSet::with_capacity_and_hasher(n.next_power_of_two(), Default::default())
-    }
 
     
     fn parenti(idx: usize) -> usize {
@@ -520,21 +566,21 @@ mod tests {
     }
     
     #[test]
-    fn test_remove_last_n() {
+    fn test_displace_last_n() {
         let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.remove_last_n(3) == items(vec![1, 2, 3]));
+        assert!(sm.displace_last_n(3) == items(vec![1, 2, 3]));
         
         let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.remove_last_n(1) == items(vec![3]));
+        assert!(sm.displace_last_n(1) == items(vec![3]));
         
         let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.remove_last_n(2) == items(vec![2, 3]));
+        assert!(sm.displace_last_n(2) == items(vec![2, 3]));
         
         let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.remove_last_n(4) == items(vec![0, 1, 2, 3]));
+        assert!(sm.displace_last_n(4) == items(vec![0, 1, 2, 3]));
         
         let mut sm = sm_items(vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
-        assert!(sm.remove_last_n(4) == items(vec![5, 6, 7, 8]));
+        assert!(sm.displace_last_n(4) == items(vec![5, 6, 7, 8]));
         assert!(sm.data.len() == 9-4);
         assert!(check_tree(&mut sm));
         
