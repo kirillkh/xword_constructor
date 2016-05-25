@@ -1,24 +1,16 @@
-use std::collections::{HashMap};
 use std::cmp::min;
 use std::mem::size_of;
 use std::mem;
-use std::hash::BuildHasherDefault;
-use fnv::FnvHasher;
 use std::marker::PhantomData;
 
-use std::cmp::Eq;
-use std::hash::Hash;
-
-//use std::hash::SipHasher;
-//type MHasher = BuildHasherDefault<SipHasher>; // remove_bulk_bench(): 11.7 ms/iter
-type MHasher = BuildHasherDefault<FnvHasher>; // remove_bulk_bench(): 7.5 ms/iter
-
-
-
-pub trait Key: Eq+Hash {
-    
+pub trait Key: Sized+Clone+Copy {
+    #[inline]
+    fn usize(self) -> usize;
 }
 
+type NdIndex = usize;
+
+type UpdMarker = usize;
 
 pub trait Item<K: Key>: Clone {
     #[inline]
@@ -29,8 +21,8 @@ pub trait Item<K: Key>: Clone {
 
 #[derive(Debug)]
 struct Node<K: Key, It: Item<K>> {
-    idx: usize,
-    upd_marker: usize,
+    idx: NdIndex,
+    upd_marker: UpdMarker,
     item: It,
     total: f32,
     ph: PhantomData<K>
@@ -41,26 +33,28 @@ struct Node<K: Key, It: Item<K>> {
 pub struct WeightedSelectionTree<K: Key, It: Item<K>> {
     data: Vec<Node<K, It>>,
     // mapping from item keys to node array indices 
-    keys: HashMap<K, usize, MHasher>,
+    keys: Vec<Option<NdIndex>>,  // TODO: to optimize this, get rid of the Option, use index=0 for "missing key"
     
-    upd_count: usize,
+    upd_count: UpdMarker,
 }
 
 impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
-    pub fn new(items: &[It]) -> WeightedSelectionTree<K, It> {
-        let mut keys: HashMap<K, usize, MHasher> = Self::make_hash_map(items.len());
-        for (i, item) in items.iter().enumerate() {
-            keys.insert(item.key(), i);
-        }
+    pub fn new(items: &[It], max_keys: usize) -> WeightedSelectionTree<K, It> {
+        let keys: Vec<Option<NdIndex>> = vec![None; max_keys];
         
         let nodes = items.iter().enumerate().map(
             |(i, it)| {
                 let weight = it.weight();
-                Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph:PhantomData }
+                Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph: PhantomData }
             }
         ).collect();
         
         let mut sm = WeightedSelectionTree { data:nodes, upd_count:0, keys:keys };
+        
+        for (i, item) in items.iter().enumerate() {
+            sm.insert_key(item.key(), i);
+        }
+        
         let levels = sm.levels_count();
         let len = sm.data.len();
         
@@ -85,8 +79,9 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         self.data.is_empty()
     }
     
+    #[allow(non_snake_case)]
 //    #[inline(never)]
-    fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<usize>) -> Vec<bool> {
+    fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<NdIndex>) -> Vec<bool> {
         let mut displaced_keep = vec![true; rm_indices.len()];
         let new_len = self.data.len();
         let mut i = 0;
@@ -108,9 +103,9 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         if keys.is_empty() {
             return vec![];
         }
-        let mut rm_indices: Vec<usize> = keys.iter()
-                                              .map(|k| self.keys.remove(k).unwrap())
-                                              .collect();
+        let mut rm_indices: Vec<NdIndex> = keys.iter()
+                                               .map(|&k| self.remove_key(k).unwrap())
+                                               .collect();
         let removed: Vec<It> = rm_indices.iter().map(|&idx| {
                 self.data[idx].item.clone()
         }).collect();
@@ -141,7 +136,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         for (i, item) in displaced_filtered.into_iter().enumerate() {
             let idx = rm_indices[i];
             upd_set.push(idx);
-            self.keys.insert(item.key(), idx);
+            self.insert_key(item.key(), idx);
             mem::replace(&mut self.data[idx].item, item);
         }
         
@@ -158,7 +153,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
 //    #[inline(never)]
-    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<usize>) {
+    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<NdIndex>) {
         let mut upd_set2 = Vec::with_capacity(upd_set.len());
         let levels = self.levels_count();
         let upd_count = self.upd_count;
@@ -186,7 +181,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             mem::swap(upd_set, &mut upd_set2);
         }
     }
-//    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<usize>, level_from: usize, level: usize) {
+//    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<NdIndex>, level_from: usize, level: usize) {
 //        let upd_count = self.upd_count;
 //        let mut i = 0;
 //        while i < upd_set.len() {
@@ -223,7 +218,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         
         if idx < len {
             let removed = self.remove_idx(idx);
-            self.keys.remove(&removed.key());
+            self.remove_key(removed.key());
             return Some(removed);
         } else {
             return None
@@ -231,16 +226,12 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     pub fn remove(&mut self, k: K) -> It {
-        let idx: usize = self.keys.remove(&k).unwrap();
+        let idx: NdIndex = self.remove_key(k).unwrap();
         self.remove_idx(idx)
     }
     
-    pub fn contains_key(&self, k: K) -> bool {
-        self.keys.contains_key(&k)
-    }
-    
     pub fn insert(&mut self, k: K, it: It) -> Option<It> {
-        let entry = self.keys.get(&k).map(|&idx| idx);
+        let &entry = self.index(k);
         let(old, idx) = match entry {
             Some(idx) => {
                 let old = mem::replace(&mut self.data[idx].item, it);
@@ -251,7 +242,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
                 let idx = self.data.len();
                 let weight = it.weight();
                 self.data.push(Node { idx:idx, upd_marker:self.upd_count, item:it, total:weight, ph:PhantomData });
-                self.keys.insert(k, idx);
+                self.insert_key(k, idx);
                 (None, idx)
             } 
         };
@@ -259,16 +250,48 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         old
     }
     
+    #[inline]
     pub fn get_mut(&mut self, k: K) -> Option<&mut It> {
-        if let Some(&idx) = self.keys.get(&k) {
+        if let &Some(idx) = self.index(k) {
             Some(&mut self.data[idx].item)
         } else {
             None
         }
     }
+    
+    
+    #[inline]
+    pub fn contains_key(&self, k: K) -> bool {
+        self.keys[k.usize()].is_some()
+    }
+    
+    #[inline]
+    fn insert_key(&mut self, key: K, idx: NdIndex) -> Option<NdIndex> {
+        let mut val = Some(idx);
+//        mem::swap(&mut val, &mut self.keys[key]);
+        mem::swap(&mut val, self.index_mut(key));
+        val
+    }
+    
+    #[inline]
+    fn remove_key(&mut self, key: K) -> Option<NdIndex> {
+        let mut val = None;
+        mem::swap(&mut val, self.index_mut(key));
+        val
+    }
+    
+    #[inline]
+    fn index_mut(&mut self, key: K) -> &mut Option<NdIndex> {
+        &mut self.keys[key.usize()]
+    }
+    
+    #[inline]
+    fn index(&self, key: K) -> &Option<NdIndex> {
+        &self.keys[key.usize()]
+    }
 
-
-    fn level_from(level: usize) -> usize {
+    
+    fn level_from(level: usize) -> NdIndex {
         (1 << level) - 1
     }
     
@@ -284,7 +307,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     // Note: it's caller's responsibility to check that the keys are not already in the tree.
-    pub fn insert_bulk(&mut self, entries: Vec<(K, It)>) {
+    pub fn insert_bulk(&mut self, entries: Vec<(K, It)>) { // TODO: we don't need to pass keys in Vec<(Key, It)>, we can get keys from the items 
         let len = self.data.len();
         let upd_from = len;
         let upd_to = len + entries.len();
@@ -292,9 +315,9 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         for (i, entry) in entries.into_iter().enumerate() {
             let (key, it) = entry;
             let idx = len + i;
-            let old = self.keys.insert(key, idx);
+            let old = self.insert_key(key, idx);
             assert!(old.is_none());
-            self.data.push(Node { idx:idx, upd_marker:self.upd_count, total:it.weight(), item:it,ph: PhantomData });
+            self.data.push(Node { idx:idx, upd_marker:self.upd_count, total:it.weight(), item:it, ph:PhantomData });
         }
         
         self.update_range(upd_from, upd_to);
@@ -303,7 +326,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
     
-    fn find_idx(&self, mut x: f32, root: usize) -> usize {
+    fn find_idx(&self, mut x: f32, root: NdIndex) -> NdIndex {
         let mut curr = root;
         let len = self.data.len();
         while curr < len {
@@ -333,12 +356,12 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
-    fn remove_idx(&mut self, idx: usize) -> It {
+    fn remove_idx(&mut self, idx: NdIndex) -> It {
         let last = self.remove_last();
         let removed = if idx == self.data.len() {
             last
         } else {
-            self.keys.insert(last.key(), idx).unwrap();
+            self.insert_key(last.key(), idx).unwrap();
             let removed = ::std::mem::replace(&mut self.data[idx].item, last);
             self.update_node(idx);
             self.update_ancestors(idx);
@@ -356,7 +379,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         node.item
     }
     
-    fn update_ancestors(&mut self, idx: usize) {
+    fn update_ancestors(&mut self, idx: NdIndex) {
         let mut curr = idx;
         while curr != 0 {
             curr = Self::parenti(curr);
@@ -366,14 +389,14 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
     #[inline]
-    fn update_range(&mut self, from: usize, to: usize) {
+    fn update_range(&mut self, from: NdIndex, to: NdIndex) {
         for i in (from..to).rev() {
             self.update_node(i);
         }
     }
     
 //    #[inline(never)]
-    fn update_ancestors_bulk(&mut self, mut changed_from: usize, mut changed_to: usize) {
+    fn update_ancestors_bulk(&mut self, mut changed_from: NdIndex, mut changed_to: NdIndex) {
         if changed_from == changed_to || changed_to <= 1 { return; }
         
         // distinguish 2 cases: self-overlapping (when the range spans more than one whole row) and non-overlapping
@@ -396,7 +419,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     // We could just do "total += delta", but that would lead to unstable results due to limited fp precision as we add and remove nodes 
     // under a parent without touchging the parent itself. Prefer the safe way for now.
     #[inline]
-    fn update_node(&mut self, idx: usize) {
+    fn update_node(&mut self, idx: NdIndex) {
         self.data[idx].total = 
             unsafe { self.score_at_unchecked(idx) } +
             self.total_at(Self::lefti(idx)) +
@@ -405,12 +428,12 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
     #[inline]
-    unsafe fn score_at_unchecked(&self, idx: usize) -> f32 {
+    unsafe fn score_at_unchecked(&self, idx: NdIndex) -> f32 {
         self.data[idx].item.weight()
     }
     
     #[inline]
-    fn score_at(&self, idx: usize) -> f32 {
+    fn score_at(&self, idx: NdIndex) -> f32 {
         if idx < self.data.len() {
             unsafe { self.score_at_unchecked(idx) }
         } else {
@@ -419,12 +442,12 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     #[inline]
-    unsafe fn total_at_unchecked(&self, idx: usize) -> f32 {
+    unsafe fn total_at_unchecked(&self, idx: NdIndex) -> f32 {
         self.data[idx].total
     }
     
     #[inline]
-    fn total_at(&self, idx: usize) -> f32 {
+    fn total_at(&self, idx: NdIndex) -> f32 {
         if idx < self.data.len() {
             unsafe { self.total_at_unchecked(idx) }
         } else {
@@ -442,39 +465,39 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     #[inline]
-    fn level_of(idx: usize) -> usize {
+    fn level_of(idx: NdIndex) -> usize {
         size_of::<usize>()*8 - ((idx+1).leading_zeros() as usize) - 1
     }
     
     #[inline]
-    fn row_start(idx: usize) -> usize {
+    fn row_start(idx: NdIndex) -> NdIndex {
         (1 << Self::level_of(idx)) - 1
     }
     
-    fn make_hash_map(n: usize) -> HashMap<K, usize, MHasher> {
-        HashMap::with_capacity_and_hasher(2*n.next_power_of_two(), Default::default())
-    }
+//    fn make_hash_map(n: usize) -> HashMap<K, usize, MHasher> {
+//        HashMap::with_capacity_and_hasher(2*n.next_power_of_two(), Default::default())
+//    }
     
 
     
-    fn parenti(idx: usize) -> usize {
+    fn parenti(idx: NdIndex) -> NdIndex {
         (idx-1) >> 1
     }
     
-    fn lefti(idx: usize) -> usize {
+    fn lefti(idx: NdIndex) -> NdIndex {
         (idx<<1) + 1
     }
     
-    fn righti(idx: usize) -> usize {
+    fn righti(idx: NdIndex) -> NdIndex {
         (idx<<1) + 2
     }
     
     
-    fn left(node: &Node<K, It>) -> usize {
+    fn left(node: &Node<K, It>) -> NdIndex {
         Self::lefti(node.idx)
     }
     
-    fn right(node: &Node<K, It>) -> usize {
+    fn right(node: &Node<K, It>) -> NdIndex {
         Self::righti(node.idx)
     }
 }
@@ -597,7 +620,7 @@ mod tests {
         let mut present = vec![false; nkeys];
          
         for node in sm.data.iter() {
-            present[node.item.key as usize] = true; 
+            present[node.item.key as NdIndex] = true; 
         }
         assert!(present == should_be_present);
         assert!(check_tree(&mut sm));

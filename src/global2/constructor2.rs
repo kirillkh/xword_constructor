@@ -371,9 +371,9 @@ impl Constructor {
         let mut variant_grid = VariantGrid::new(self.places.clone(), self.h, self.w);
 		let mut best_seq = ChosenSequence::new(Vec::with_capacity(self.placements_per_word.len()), Eff(0));
 		{
-            let mut select_tree: SelectTree = SelectTree::new(policy);
+            let mut select_tree: SelectTree = SelectTree::new(policy, policy.len());
             
-			let mut resolution_map: ResolutionMap = WeightedSelectionTree::new(&[]);
+			let mut resolution_map: ResolutionMap = WeightedSelectionTree::new(&[], policy.len());
 			
 			// random rollout according to the policy
 			while !select_tree.is_empty() || !resolution_map.is_empty() {

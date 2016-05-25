@@ -2,7 +2,7 @@
 use std::ops::{Index, IndexMut, Deref};
 use std::rc::Rc;
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, OwnedArray};
-use rand::{SeedableRng, XorShiftRng, Rng, thread_rng};
+use rand::{SeedableRng, XorShiftRng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use global2::data::ScoredMove;
 use global2::weighted_selection_tree::Key;
@@ -165,7 +165,10 @@ pub struct PlacementId(pub u32);
 //}
 
 impl Key for PlacementId {
-    
+    #[inline]
+    fn usize(self) -> usize {
+        self.0 as usize
+    }
 }
 
 impl Index<PlacementId> for [Placement] {
