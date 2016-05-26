@@ -33,7 +33,7 @@ impl VariantGrid {
                 let cell_entries: &mut Vec<PlacementId> = &mut field[MatrixDim(y, x)];
                 let char_idx = y-place_y + x-place_x;
                 entry[char_idx] = cell_entries.len();
-                cell_entries.push(PlacementId(i as u32));
+                cell_entries.push(PlacementId(i));
             });
         }
         

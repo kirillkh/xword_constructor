@@ -87,7 +87,7 @@ impl Deref for LineDim {
 }
 
 //---- Word ----------------------------------------------------------------------------
-pub type WordId = u32;
+pub type WordId = usize;
 
 #[derive(Clone, Debug)]
 pub struct Word {
@@ -153,7 +153,7 @@ impl Orientation {
 
 //---- Placement -----------------------------------------------------------------------
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PlacementId(pub u32);
+pub struct PlacementId(pub usize);
 
 //type PlacementId = u32;
 
@@ -247,13 +247,13 @@ pub struct Placement {
 	pub id: PlacementId,
 	pub y: dim,
 	pub x: dim,
-	pub orientation: Orientation,
 	pub word: Word,
+	pub orientation: Orientation,
 }
 
 impl Placement {
 	pub fn new(id: usize, orientation: Orientation, y: dim, x: dim, word: Word) -> Placement {
-		Placement { id:PlacementId(id as u32), orientation:orientation, y:y, x:x, word:word }
+		Placement { id:PlacementId(id), orientation:orientation, y:y, x:x, word:word }
 	}
 	
 	#[inline]

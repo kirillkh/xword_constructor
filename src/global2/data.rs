@@ -5,9 +5,8 @@ use fixed_grid::PlaceMove;
 #[derive(Clone, Debug)]
 pub struct ScoredMove {
     pub place: Placement,
-	pub score: f32,
 	pub exp_score: f32,
-	
+	pub score: f32,
 }
 
 impl weighted_selection_tree::Item<PlacementId> for ScoredMove {
