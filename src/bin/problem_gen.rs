@@ -3,6 +3,8 @@ extern crate regex;
 extern crate ndarray;
 extern crate rand;
 
+mod dic_arena;
+
 use std::str;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
@@ -15,6 +17,7 @@ use rand::distributions::Range;
 
 use xword::{dim, MatrixDim, LineDim, Problem, Orientation, Word};
 use xword::util::{make_rng, AbstractRng};
+use xword::sliced_arena::SlicedArena;
 
 fn main() {
     let bytes = read_template();
@@ -62,8 +65,7 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 	
 	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	
-	let mut wid = 0;
-	let mut dic : Vec<Word> = vec![];
+	let mut dic : Vec<Vec<u8>> = vec![];
 	
 	let mut add_word = |dic: &mut Vec<_>, line: &ArrayView<_, _>, from, to| {
 		if to - from > 1 {
@@ -72,11 +74,8 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 				.take(to-from)
 				.cloned()
 				.collect();
-			let word = Word::new(wid, v.into_boxed_slice());
-			dic.push(word);
+			dic.push(v);
 		}
-		
-		wid += 1;
 	};
 	
 	for &orientation in Orientation::values().iter() {
@@ -99,6 +98,8 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 		}
 	}
 	
+	let (dic, dic_arena) = dic_arena::dic_arena(dic);
+
 	for j in 0 .. templ.dim()[0] {
 		for i in 0 .. templ.dim()[1] {
 			let idx = MatrixDim(j, i);
@@ -109,7 +110,7 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 		}
 	}
 	
-	Problem::new(dic, board)
+	Problem::new(dic, dic_arena, board)
 }
 
 fn write_problem(problem: &Problem) {

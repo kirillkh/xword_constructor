@@ -6,6 +6,7 @@ use rand::{SeedableRng, XorShiftRng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use global2::data::ScoredMove;
 use global2::weighted_selection_tree::Key;
+use global2::sliced_arena::SlicedArena;
 use std::mem;
 
 #[allow(non_camel_case_types)]
@@ -92,12 +93,12 @@ pub type WordId = usize;
 #[derive(Clone, Debug)]
 pub struct Word {
 	pub id: WordId, // unique id
-	pub str: Rc<Box<[u8]>>,
+	pub str: &'static [u8],
 }
 
 impl Word {
-	pub fn new(id: WordId, str: Box<[u8]>) -> Word {
-		Word { id:id, str: Rc::new(str) }
+	pub fn new(id: WordId, str: &'static [u8]) -> Word {
+		Word { id:id, str:str }
 	}
 	
 	#[inline]
@@ -114,7 +115,6 @@ impl ::std::ops::Index<dim> for Word {
     	&self.str[index as usize]
     }
 }
-
 
 //---- Orientation ---------------------------------------------------------------------
 #[derive(PartialEq, Clone, Copy, Hash, Debug)]
@@ -318,13 +318,14 @@ impl AsRef<Placement> for Placement {
 //---- Problem -------------------------------------------------------------------------
 
 pub struct Problem {
+    dic_arena: SlicedArena<u8>,
 	pub dic: Vec<Word>,
 	pub board: OwnedArray<bool, MatrixDim>,
 }
 
 impl Problem {
-	pub fn new(dic: Vec<Word>, board: OwnedArray<bool, MatrixDim>) -> Problem {
-		Problem { dic:dic, board:board }
+	pub fn new(dic: Vec<Word>, dic_arena: SlicedArena<u8>, board: OwnedArray<bool, MatrixDim>) -> Problem {
+		Problem { dic:dic, dic_arena:dic_arena, board:board }
 	}
 }
 

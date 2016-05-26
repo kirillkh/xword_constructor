@@ -4,6 +4,8 @@ extern crate ndarray;
 extern crate rand;
 extern crate getopts;
 
+mod dic_arena;
+
 use getopts::Options;
 use std::env;
 
@@ -19,6 +21,7 @@ use ndarray::{OwnedArray, Axis};
 
 use xword::{FixedGrid, Constructor, dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim, Problem};
 use xword::util;
+use xword::sliced_arena::SlicedArena;
 
 fn main() {
     if let Some(opts) = parse_opts() {
@@ -180,14 +183,14 @@ fn parse_problem(bytes: Vec<u8>) -> Problem {
 	
 	let dic_str = caps.at(4).unwrap();
 	let re = Regex::new(r"(?m)\n?(^.+)").unwrap();
-	let mut dic : Vec<Word> = vec![];
-	let mut id : WordId = 0;
+	let mut dic : Vec<Vec<u8>> = vec![];
     for cap in re.captures_iter(dic_str) {
     	let cap = cap.at(1).unwrap();
-    	let boxed = cap.to_vec().into_boxed_slice();
-    	dic.push(Word::new(id, boxed));
-    	id += 1;
+        let word = cap.to_vec();
+        dic.push(word);
     }
+    
+	let (dic, dic_arena) = dic_arena::dic_arena(dic);
 	
 	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
@@ -202,7 +205,7 @@ fn parse_problem(bytes: Vec<u8>) -> Problem {
     	}
     }
     
-    Problem::new(dic, board)
+    Problem::new(dic, dic_arena, board)
 }
 
 
