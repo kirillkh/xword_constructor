@@ -19,9 +19,8 @@ use regex::bytes::Regex;
 
 use ndarray::{OwnedArray, Axis};
 
-use xword::{FixedGrid, Constructor, dim, Word, WordId, Orientation, Placement, MatrixDim, LineDim, Problem};
+use xword::{FixedGrid, Constructor, dim, Orientation, Placement, MatrixDim, LineDim, Problem};
 use xword::util;
-use xword::sliced_arena::SlicedArena;
 
 fn main() {
     if let Some(opts) = parse_opts() {

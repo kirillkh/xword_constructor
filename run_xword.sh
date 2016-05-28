@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-time cargo run --release --bin xword -- $@
+cargo rustc --release --bin xword  -- -Z orbit -Z unstable-options && time target/release/xword $@

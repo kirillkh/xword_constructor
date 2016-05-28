@@ -9,6 +9,12 @@ use global2::weighted_selection_tree::Key;
 use global2::sliced_arena::SlicedArena;
 use std::mem;
 
+#[derive(Clone, Debug, Copy)]
+#[repr(simd)]
+pub struct Align64 { al1: u64, al2: u64 }
+
+
+
 #[allow(non_camel_case_types)]
 pub type dim = Ix;
 
@@ -236,8 +242,6 @@ impl IndexMut<PlacementId> for Vec<ScoredMove> {
 ////        self.index(5)
 //    }
 //}
-
-
 
 
 

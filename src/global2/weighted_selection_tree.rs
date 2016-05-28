@@ -1,6 +1,6 @@
-use std::cmp::min;
 use std::mem::size_of;
 use std::mem;
+use std::ptr;
 use std::marker::PhantomData;
 
 pub trait Key: Sized+Clone+Copy {
@@ -21,9 +21,9 @@ pub trait Item<K: Key>: Clone {
 
 #[derive(Debug)]
 struct Node<K: Key, It: Item<K>> {
+    item: It,
     idx: NdIndex,
     upd_marker: UpdMarker,
-    item: It,
     total: f32,
     ph: PhantomData<K>
 }
@@ -38,7 +38,10 @@ pub struct WeightedSelectionTree<K: Key, It: Item<K>> {
     upd_count: UpdMarker,
 }
 
+
+#[allow(non_snake_case)]
 impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
+    #[inline(never)]
     pub fn new(items: &[It], max_keys: usize) -> WeightedSelectionTree<K, It> {
         let keys: Vec<Option<NdIndex>> = vec![None; max_keys];
         
@@ -56,17 +59,11 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
         
         let levels = sm.levels_count();
-        let len = sm.data.len();
         
         if levels == 0 { return sm; }
         
-        for level in (0..levels-1).rev() {
-            let level_from = Self::level_from(level);
-            let level_count = min(level_from + 1, len - level_from);
-            for i in 0..level_count {
-                sm.update_node(level_from + i);
-            }
-        }
+        let level_from = Self::level_from(levels-1);
+        sm.update_ancestors_bulk(level_from, 2*level_from + 1);
         
         sm
     }
@@ -79,8 +76,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         self.data.is_empty()
     }
     
-    #[allow(non_snake_case)]
-//    #[inline(never)]
+    #[inline(never)]
     fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<NdIndex>) -> Vec<bool> {
         let mut displaced_keep = vec![true; rm_indices.len()];
         let new_len = self.data.len();
@@ -99,61 +95,74 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
 
     #[no_mangle]
+    #[inline(never)]
     pub fn remove_bulk(&mut self, keys: &[K]) -> Vec<It> {
+        self.upd_count += 1;
+
         if keys.is_empty() {
             return vec![];
         }
-        let mut rm_indices: Vec<NdIndex> = keys.iter()
-                                               .map(|&k| self.remove_key(k).unwrap())
-                                               .collect();
-        let removed: Vec<It> = rm_indices.iter().map(|&idx| {
-                self.data[idx].item.clone()
-        }).collect();
-         
-        let len = self.data.len();
-        let n = rm_indices.len();
+        let rm_indices: Vec<NdIndex> = keys.iter()
+                                           .map(|&k| self.remove_key(k).unwrap())
+                                           .collect();
         
-         
-        assert!(n <= len);
-         
-        // 1. remove the last n items and update their parents
-        let displaced_items = self.displace_last_n(n);
+        let rm_len = rm_indices.len();
+        let new_len = self.data.len() - rm_len;
         
-        // 2. discard any items that were among the last n from rm_indices
-        let displaced_keep = self.remove_bulk__items_to_keep(&mut rm_indices);
-         
-        let mut displaced_filtered = Vec::with_capacity(n);
-        for (i, item) in displaced_items.into_iter().enumerate() {
-            if displaced_keep[i] {
-                displaced_filtered.push(item);
+        // 1. Build `displaced_assoc` map of length rm_len as follows. The map fulfills the task: 
+        //         "given index i into data[new_len..], find the index into rm_indices that corresponds to the item in data that will be replaced with data[new_len+i]".
+        //    Using it, we can then perform two things:
+        //      1) move the replaced items from data into a new `removed` vec in the order, in which the items' indices appear in rm_indices
+        //      2) move the items from data[new_len..] to replace the removed items in data
+        
+        // 1.1. for j'th item in data[new_len..], which is requested to be removed: displaced_assoc[j] = i, where i is the corresponding index into rm_indices
+        let KEEP = ::std::usize::MAX;
+        let mut displaced_assoc = vec![KEEP; rm_len];
+        let mut replacing_len = 0;
+        for (i, &idx) in rm_indices.iter().enumerate() {
+            if idx >= new_len {
+                displaced_assoc[idx - new_len] = i;
+            } else {
+                replacing_len += 1;
             }
         }
         
-        assert!(displaced_filtered.len() == rm_indices.len());
-        
-        // 3. replace the removed items with the displaced ones and initialize the update set
-        let mut upd_set = Vec::with_capacity(displaced_filtered.len());
-        for (i, item) in displaced_filtered.into_iter().enumerate() {
-            let idx = rm_indices[i];
-            upd_set.push(idx);
-            self.insert_key(item.key(), idx);
-            mem::replace(&mut self.data[idx].item, item);
+        // 1.2. for j'th item in displaced_assoc, s.t. it is not requested to be removed: displaced_assoc[j] = <the next element in rm_indices which has not been added already>
+        let mut iremoved = 0;
+        for i in 0..rm_len {
+            if displaced_assoc[i] == KEEP {
+                while rm_indices[iremoved] >= new_len {
+                    iremoved += 1;
+                }
+                
+                displaced_assoc[i] = iremoved;
+                iremoved += 1;
+            } // else displaced_assoc[i] is already pointing at the correct index in rm_indices
         }
         
-        self.upd_count += 1;
+        // 2. At this point, j'th item in displaced_assoc contains index i into rm_indices for item it will replace.
+        // Move the replacing items to the replaced ones' positions. While we're at it, also collect the removed items into the `removed` vec.
+        let mut upd_set: Vec<NdIndex> = Vec::with_capacity(replacing_len);
+//        let mut removed: Vec<It> = Vec::with_capacity(rm_len);
+        let removed = self.remove_bulk__copy(&mut upd_set, rm_len, displaced_assoc, rm_indices); 
+        
+        // update ancestors of the `rm_len` items that were removed/displaced from the end of the vec
+        self.update_ancestors_bulk(new_len, new_len+rm_len);
+        
+        // 3. mark the replaced items to be updated
         let upd_count = self.upd_count;
         for &idx in upd_set.iter() {
             self.data[idx].upd_marker = upd_count;
         }
         
         // 4. update order statistics bottom-up, level by level 
-        self.remove_bulk_levels(&mut upd_set);
+        self.remove_bulk__levels(&mut upd_set);
         
         removed
     }
-    
-//    #[inline(never)]
-    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<NdIndex>) {
+
+    #[inline(never)]
+    fn remove_bulk__levels(&mut self, upd_set: &mut Vec<NdIndex>) {
         let mut upd_set2 = Vec::with_capacity(upd_set.len());
         let levels = self.levels_count();
         let upd_count = self.upd_count;
@@ -181,7 +190,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             mem::swap(upd_set, &mut upd_set2);
         }
     }
-//    fn remove_bulk_levels(&mut self, upd_set: &mut Vec<NdIndex>, level_from: usize, level: usize) {
+//    fn remove_bulk__levels(&mut self, upd_set: &mut Vec<NdIndex>, level_from: usize, level: usize) {
 //        let upd_count = self.upd_count;
 //        let mut i = 0;
 //        while i < upd_set.len() {
@@ -212,6 +221,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
 //    }
     
     
+    #[inline(never)]
     pub fn select_remove(&mut self, x: f32) -> Option<It> {
         let idx = self.find_idx(x, 0);
         let len = self.data.len();
@@ -225,6 +235,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
     }
     
+    #[inline(never)]
     pub fn remove(&mut self, k: K) -> It {
         let idx: NdIndex = self.remove_key(k).unwrap();
         self.remove_idx(idx)
@@ -268,7 +279,6 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     #[inline]
     fn insert_key(&mut self, key: K, idx: NdIndex) -> Option<NdIndex> {
         let mut val = Some(idx);
-//        mem::swap(&mut val, &mut self.keys[key]);
         mem::swap(&mut val, self.index_mut(key));
         val
     }
@@ -290,23 +300,8 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         &self.keys[key.usize()]
     }
 
-    
-    fn level_from(level: usize) -> NdIndex {
-        (1 << level) - 1
-    }
-    
-    
-//    #[inline(never)]
-    fn displace_last_n(&mut self, n: usize) -> Vec<It> {
-        let len = self.data.len();
-        let upd_from = len - n;
-        let displaced_items = self.data.drain(upd_from..).map(|node| node.item).collect();
-        self.update_ancestors_bulk(upd_from, len);
-        
-        displaced_items
-    }
-    
     // Note: it's caller's responsibility to check that the keys are not already in the tree.
+    #[inline(never)]
     pub fn insert_bulk(&mut self, entries: Vec<(K, It)>) { // TODO: we don't need to pass keys in Vec<(Key, It)>, we can get keys from the items 
         let len = self.data.len();
         let upd_from = len;
@@ -326,6 +321,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
     
+    #[inline(never)]
     fn find_idx(&self, mut x: f32, root: NdIndex) -> NdIndex {
         let mut curr = root;
         let len = self.data.len();
@@ -356,6 +352,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
+    #[inline(never)]
     fn remove_idx(&mut self, idx: NdIndex) -> It {
         let last = self.remove_last();
         let removed = if idx == self.data.len() {
@@ -371,14 +368,16 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         removed
     }
     
+    #[inline(never)]
     fn remove_last(&mut self) -> It {
-        let curr = self.data.len() - 1;
-        let node = self.data.remove(curr);
-        self.update_ancestors(curr);
+        let last = self.data.len() - 1;
+        let Node{ item, idx:_, upd_marker:_, total:_, ph:_ } = self.data.swap_remove(last);
+        self.update_ancestors(last);
         
-        node.item
+        item
     }
     
+    #[inline(never)]
     fn update_ancestors(&mut self, idx: NdIndex) {
         let mut curr = idx;
         while curr != 0 {
@@ -388,14 +387,15 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
-    #[inline]
+//    #[inline]
+    #[inline(never)]
     fn update_range(&mut self, from: NdIndex, to: NdIndex) {
         for i in (from..to).rev() {
             self.update_node(i);
         }
     }
     
-//    #[inline(never)]
+    #[inline(never)]
     fn update_ancestors_bulk(&mut self, mut changed_from: NdIndex, mut changed_to: NdIndex) {
         if changed_from == changed_to || changed_to <= 1 { return; }
         
@@ -465,13 +465,18 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     #[inline]
+    fn level_from(level: usize) -> NdIndex {
+        (1 << level) - 1
+    }
+    
+    #[inline]
     fn level_of(idx: NdIndex) -> usize {
         size_of::<usize>()*8 - ((idx+1).leading_zeros() as usize) - 1
     }
     
     #[inline]
     fn row_start(idx: NdIndex) -> NdIndex {
-        (1 << Self::level_of(idx)) - 1
+        Self::level_from(Self::level_of(idx))
     }
     
 //    fn make_hash_map(n: usize) -> HashMap<K, usize, MHasher> {
@@ -689,3 +694,110 @@ mod tests {
         )
     }
 }
+
+
+
+
+trait WeightedSelectionTreeCopy<K: Key, It: Item<K>> {
+    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It>;
+}
+
+
+impl<K: Key, It: Item<K>> WeightedSelectionTreeCopy<K, It> for WeightedSelectionTree<K, It> {
+    #[inline(never)]
+    default fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It> {
+        let mut removed = Vec::with_capacity(rm_len);
+        
+        let new_len = self.data.len() - rm_len; 
+        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
+        let removed_ptr = removed.as_mut_ptr();
+        
+        for i in 0..rm_len {
+            let node = &mut self.data[new_len+i];
+            let iremoved = displaced_assoc[i];
+            let rm_ptr = unsafe { removed_ptr.offset(iremoved as isize) };
+            let target_idx = rm_indices[iremoved];
+            if target_idx < new_len {
+                self.keys[node.item.key().usize()] = Some(target_idx);
+                unsafe {
+                    let d_ptr = &mut (*data_ptr.offset(target_idx as isize)).item;
+                    ptr::copy_nonoverlapping(d_ptr, rm_ptr, 1);
+                    ptr::copy_nonoverlapping(&node.item, d_ptr, 1);
+                }
+                upd_set.push(target_idx);
+            } else {
+                unsafe {
+                    ptr::copy_nonoverlapping(&node.item, rm_ptr, 1);
+                }
+            }
+        }
+        
+        unsafe {
+            self.data.set_len(new_len);
+            removed.set_len(rm_len);
+        }
+        
+        removed
+    }
+}
+
+
+
+
+use common::{PlacementId, Align64};
+use super::data::ScoredMove;
+
+struct AlignedItem {
+    it: ScoredMove,
+    
+    _align: [Align64;0],
+}
+
+#[inline]
+unsafe fn write_aligned(rm_ptr: *mut AlignedItem, src: AlignedItem) {
+    ptr::write(rm_ptr, src);
+}
+    
+// TODO: this does not currently provide any performance benefits. See https://github.com/rust-lang/rust/issues/33923
+impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTree<PlacementId, ScoredMove> {
+    #[inline(never)]
+    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<ScoredMove> {
+//        println!("sz(scmv)={}, sz(al)={}", mem::size_of::<ScoredMove>(), mem::size_of::<AlignedItem>());
+        let mut removed: Vec<AlignedItem> = Vec::with_capacity(rm_len);
+        
+        let new_len = self.data.len() - rm_len; 
+        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
+        let removed_ptr = removed.as_mut_ptr();
+        
+        for i in 0..rm_len {
+            let node = &mut self.data[new_len+i];
+            let iremoved = displaced_assoc[i];
+            let rm_ptr: *mut AlignedItem = unsafe { removed_ptr.offset(iremoved as isize) };
+            let target_idx = rm_indices[iremoved];
+            unsafe {
+                if target_idx < new_len {
+                    self.keys[node.item.key().usize()] = Some(target_idx);
+                    
+                    let src_ptr: *mut ScoredMove = &mut (*data_ptr.offset(target_idx as isize)).item;
+                    let src: ScoredMove = ptr::read(src_ptr);
+                    let src: AlignedItem = mem::transmute(src);
+                    write_aligned(rm_ptr, src);
+                    ptr::copy_nonoverlapping(&node.item, src_ptr, 1);
+                    
+                    upd_set.push(target_idx);
+                } else {
+                    let _rm_ptr: *mut ScoredMove = mem::transmute(rm_ptr);
+                    ptr::copy_nonoverlapping(&node.item, _rm_ptr, 1);
+                }
+            }
+        }
+        
+        unsafe {
+            self.data.set_len(new_len);
+            removed.set_len(rm_len);
+            
+            mem::transmute(removed)
+        }
+    }
+}
+
