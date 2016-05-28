@@ -525,21 +525,19 @@ impl<K: Key, It: Item<K>> WeightedSelectionTreeCopy<K, It> for WeightedSelection
         let removed_ptr = removed.as_mut_ptr();
         
         for i in 0..rm_len {
-            let node = &mut self.data[new_len+i];
             let iremoved = displaced_assoc[i];
             let rm_ptr = unsafe { removed_ptr.offset(iremoved as isize) };
-            let target_idx = rm_indices[iremoved];
-            if target_idx < new_len {
-                self.keys[node.item.key().usize()] = Some(target_idx);
-                unsafe {
-                    let d_ptr = &mut (*data_ptr.offset(target_idx as isize)).item;
-                    ptr::copy_nonoverlapping(d_ptr, rm_ptr, 1);
-                    ptr::copy_nonoverlapping(&node.item, d_ptr, 1);
-                }
-                upd_set.push(target_idx);
-            } else {
-                unsafe {
-                    ptr::copy_nonoverlapping(&node.item, rm_ptr, 1);
+            let src_idx = rm_indices[iremoved];
+            
+            unsafe {
+                let src_ptr = &mut (*data_ptr.offset(src_idx as isize)).item;
+                ptr::copy_nonoverlapping(src_ptr, rm_ptr, 1);
+                
+                if src_idx < new_len {
+                    let displaced = &(*data_ptr.offset((new_len+i) as isize)).item;
+                    self.keys[displaced.key().usize()] = Some(src_idx);
+                    ptr::copy_nonoverlapping(displaced, src_ptr, 1);
+                    upd_set.push(src_idx);
                 }
             }
         }
@@ -565,11 +563,6 @@ struct AlignedItem {
     _align: [Align64;0],
 }
 
-#[inline]
-unsafe fn write_aligned(rm_ptr: *mut AlignedItem, src: AlignedItem) {
-    ptr::write(rm_ptr, src);
-}
-    
 // TODO: this does not currently provide any performance benefits. See https://github.com/rust-lang/rust/issues/33923
 impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTree<PlacementId, ScoredMove> {
     #[inline(never)]
@@ -582,24 +575,20 @@ impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTre
         let removed_ptr = removed.as_mut_ptr();
         
         for i in 0..rm_len {
-            let node = &mut self.data[new_len+i];
             let iremoved = displaced_assoc[i];
             let rm_ptr: *mut AlignedItem = unsafe { removed_ptr.offset(iremoved as isize) };
-            let target_idx = rm_indices[iremoved];
+            let src_idx = rm_indices[iremoved];
             unsafe {
-                if target_idx < new_len {
-                    self.keys[node.item.key().usize()] = Some(target_idx);
-                    
-                    let src_ptr: *mut ScoredMove = &mut (*data_ptr.offset(target_idx as isize)).item;
-                    let src: ScoredMove = ptr::read(src_ptr);
-                    let src: AlignedItem = mem::transmute(src);
-                    write_aligned(rm_ptr, src);
-                    ptr::copy_nonoverlapping(&node.item, src_ptr, 1);
-                    
-                    upd_set.push(target_idx);
-                } else {
-                    let _rm_ptr: *mut ScoredMove = mem::transmute(rm_ptr);
-                    ptr::copy_nonoverlapping(&node.item, _rm_ptr, 1);
+                let src_ptr: *mut ScoredMove = &mut (*data_ptr.offset(src_idx as isize)).item;
+                let src: ScoredMove = ptr::read(src_ptr);
+                let src: AlignedItem = mem::transmute(src);
+                ptr::write(rm_ptr, src);
+                
+                if src_idx < new_len {
+                    let displaced = &(*data_ptr.offset((new_len+i) as isize)).item;
+                    self.keys[displaced.key().usize()] = Some(src_idx);
+                    ptr::copy_nonoverlapping(displaced, src_ptr, 1);
+                    upd_set.push(src_idx);
                 }
             }
         }
