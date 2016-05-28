@@ -4,6 +4,7 @@ use std::mem::size_of;
 use std::mem;
 use std::ptr;
 use std::marker::PhantomData;
+use std::cmp::min;
 
 pub trait Key: Sized+Clone+Copy {
     #[inline]
@@ -169,69 +170,68 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
         
         // 4. update order statistics bottom-up, level by level 
-        self.remove_bulk__levels(&mut upd_set);
+        self.remove_bulk__levels(upd_set);
         
         removed
     }
 
     #[inline(never)]
-    fn remove_bulk__levels(&mut self, upd_set: &mut Vec<NdIndex>) {
-        let mut upd_set2 = Vec::with_capacity(upd_set.len());
+    fn remove_bulk__levels(&mut self, mut upd_set: Vec<NdIndex>) {
+        if self.data.len() == 0 { return; }
+        
         let levels = self.levels_count();
         let upd_count = self.upd_count;
+        
+        let leaves_from = self.leaves_from();
         
         for level in (0..levels).rev() {
             let level_from = Self::level_from(level);
 
-            for idx in upd_set.drain(..) {
-                if idx >= level_from {
-                    // the item is at the current level: update the node and insert its parent
-                    self.update_node(idx);
-                    if level > 0 {
-                        let parenti = Self::parenti(idx);
-                        if self.data[parenti].upd_marker != upd_count {
-                            self.data[parenti].upd_marker = upd_count;
-                            upd_set2.push(parenti);
+            unsafe {
+                let mut i = 0;
+                let upd_ptr = upd_set.as_mut_ptr();
+                let mut len = upd_set.len();
+                while i < len {
+                    let idx_ptr = upd_ptr.offset(i as isize);
+                    let idx = *idx_ptr;
+                    let mut keep = false;
+                    if idx >= level_from {
+                        // the item is at the current level: update the node and insert its parent
+                        if idx >= leaves_from {
+                            self.update_node_leaf(idx);
+                        } else if idx + 1 == leaves_from {
+                            self.update_node(idx);
+                        } else {
+                            self.update_node_complete(idx);
                         }
+                        
+                        if level > 0 {
+                            let parenti = Self::parenti(idx);
+                            let parent = self.data.get_unchecked_mut(parenti);
+                            if parent.upd_marker != upd_count {
+                                parent.upd_marker = upd_count;
+                                *idx_ptr = parenti;
+                                keep = true;
+                            }
+                        }
+                    } else {
+                        // the item is above the current level: just copy it verbatim for future processing
+                        *idx_ptr = idx;
+                        keep = true;
+                    };
+                    
+                    if keep {
+                        i += 1;
+                    } else {
+                        len -= 1;
+                        *idx_ptr = *upd_set.get_unchecked(len);
                     }
-                } else {
-                    // the item is above the current level: just copy it verbatim for future processing
-                    upd_set2.push(idx);
                 }
+                
+                upd_set.set_len(len);
             }
-            
-            mem::swap(upd_set, &mut upd_set2);
         }
     }
-//    fn remove_bulk__levels(&mut self, upd_set: &mut Vec<NdIndex>, level_from: usize, level: usize) {
-//        let upd_count = self.upd_count;
-//        let mut i = 0;
-//        while i < upd_set.len() {
-//            let idx = upd_set[i];
-//            
-//            if idx >= level_from {
-//                // the item is at the current level: update the node and insert its parent
-//                self.update_node(idx);
-//                if level > 0 {
-//                    let parenti = Self::parenti(idx);
-//                    if self.data[parenti].upd_marker != upd_count {
-//                        self.data[parenti].upd_marker = upd_count;
-//                        upd_set[i] = parenti;
-//                        i += 1;
-//                    } else {
-//                        upd_set.swap_remove(i);
-////                        mem::swap(&mut upd_set.last(), idx);
-////                        let idx = upd_set.last();
-//                    }
-//                } else {
-//                    break;
-//                }
-//            } else {
-//                // the item is above the current level: just copy it verbatim for future processing
-//                i += 1;
-//            }
-//        }
-//    }
     
     
     #[inline(never)]
@@ -305,7 +305,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     #[inline]
     fn index_mut(&mut self, key: K) -> &mut Option<NdIndex> {
-        &mut self.keys[key.usize()]
+        unsafe { self.keys.get_unchecked_mut(key.usize()) }
     }
     
     #[inline]
@@ -381,7 +381,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         removed
     }
     
-    #[inline(never)]
+    #[inline]
     fn remove_last(&mut self) -> It {
         let last = self.data.len() - 1;
         let Node{ item, idx:_, upd_marker:_, total:_, ph:_ } = self.data.swap_remove(last);
@@ -390,7 +390,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         item
     }
     
-    #[inline(never)]
+    #[inline]
     fn update_ancestors(&mut self, idx: NdIndex) {
         let mut curr = idx;
         while curr != 0 {
@@ -401,15 +401,31 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
 //    #[inline]
-    #[inline(never)]
+    #[inline]
     fn update_range(&mut self, from: NdIndex, to: NdIndex) {
         for i in (from..to).rev() {
             self.update_node(i);
         }
     }
     
+    #[inline]
+    unsafe fn update_range_complete(&mut self, from: NdIndex, to: NdIndex) {
+        for i in (from..to).rev() {
+            self.update_node_complete(i);
+        }
+    }
+    
+    #[inline]
+    unsafe fn update_range_leaves(&mut self, from: NdIndex, to:NdIndex) {
+        for i in (from..to).rev() {
+            self.update_node_leaf(i);
+        }
+    }
+    
     #[inline(never)]
     fn update_ancestors_bulk(&mut self, mut changed_from: NdIndex, mut changed_to: NdIndex) {
+        // this is a simple algorithm, complicated only by the programmer's obsessive desire to save a few cycles on bounds checking
+         
         if changed_from == changed_to || changed_to <= 1 { return; }
         
         // distinguish 2 cases: self-overlapping (when the range spans more than one whole row) and non-overlapping
@@ -420,12 +436,60 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             self.update_range(row_start, changed_from);
             changed_from = row_start;
             changed_to = 1 + (row_start << 1);
+            
+            // special-case one more row so that we can use update_range_unchecked() afterwards
+            if changed_from != 0 {
+                changed_from = Self::parenti(changed_from);
+                changed_to = Self::parenti(changed_to-1) + 1;
+                self.update_range(changed_from, changed_to);
+            }
+        }
+        
+        // special-case 2 last batches so that we can use update_range_unchecked() afterwards
+        if changed_from != 0 && changed_from != changed_to {
+            changed_from = Self::parenti(changed_from);
+            changed_to = Self::parenti(changed_to-1) + 1;
+            
+            let leaves_from = min(self.leaves_from(), changed_to);
+            let leaves_to = changed_to;
+            
+            let mut special_to = leaves_from;
+            
+            unsafe { self.update_range_leaves(leaves_from, leaves_to); }
+            
+            if changed_from < leaves_from {
+                // boundary case: might have 1 or 0 children
+                special_to = leaves_from - 1;
+                self.update_node(special_to);
+            }
+            
+            // all others from this batch have 2 children
+            unsafe { self.update_range_complete(changed_from, special_to); }
+            
+            // ... and one more batch: need to handle a tricky corner case where the next changed_to == special_to+1
+            if changed_from != 0 {
+                changed_from = Self::parenti(changed_from);
+                changed_to = Self::parenti(changed_to-1) + 1;
+                let upd_to = min(changed_to, special_to);
+                unsafe { self.update_range_complete(changed_from, upd_to); }
+            }
         }
         
         while changed_from != 0 {
             changed_from = Self::parenti(changed_from);
             changed_to = Self::parenti(changed_to-1) + 1;
-            self.update_range(changed_from, changed_to);
+            unsafe { self.update_range_complete(changed_from, changed_to); }
+        }
+    }
+    
+    fn leaves_from(&self) -> NdIndex {
+        let len = self.data.len();
+        Self::parenti(len) + 1 - (len & 1)
+    }
+    
+    fn leaves_count(&mut self, idx: NdIndex) -> usize {
+        if Self::lefti(idx) >= self.data.len() { 0 } else { 1 +
+                (if Self::righti(idx) >= self.data.len() { 0 } else { 1 })
         }
     }
     
@@ -433,10 +497,25 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     // under a parent without touchging the parent itself. Prefer the safe way for now.
     #[inline]
     fn update_node(&mut self, idx: NdIndex) {
-        self.data[idx].total = 
-            unsafe { self.score_at_unchecked(idx) } +
-            self.total_at(Self::lefti(idx)) +
-            self.total_at(Self::righti(idx));
+        unsafe {
+            self.data.get_unchecked_mut(idx).total = 
+                self.score_at_unchecked(idx) +
+                self.total_at(Self::lefti(idx)) +
+                self.total_at(Self::righti(idx));
+        }
+    }
+    
+    #[inline]
+    unsafe fn update_node_leaf(&mut self, idx: NdIndex) {
+        self.data.get_unchecked_mut(idx).total = self.score_at_unchecked(idx);
+    }
+    
+    #[inline]
+    unsafe fn update_node_complete(&mut self, idx: NdIndex) {
+        self.data.get_unchecked_mut(idx).total = 
+            self.score_at_unchecked(idx) +
+            self.total_at_unchecked(Self::lefti(idx)) +
+            self.total_at_unchecked(Self::righti(idx));
     }
     
     
