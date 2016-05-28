@@ -46,13 +46,24 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     pub fn new(items: &[It], max_keys: usize) -> WeightedSelectionTree<K, It> {
         let keys: Vec<Option<NdIndex>> = vec![None; max_keys];
         
-        let nodes = items.iter().enumerate().map(
-            |(i, it)| {
-                let weight = it.weight();
-                Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph: PhantomData }
+        // create nodes
+        let n = items.len();
+        let mut nodes = Vec::with_capacity(n);
+        let nodes_ptr = nodes.as_mut_ptr();
+        for i in 0..n {
+            let it = &items[i];
+            let weight = it.weight();
+            let node = Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph: PhantomData };
+            unsafe { 
+                ptr::write(nodes_ptr.offset(i as isize), node);
             }
-        ).collect();
+        }
         
+        unsafe {
+            nodes.set_len(n);
+        }
+        
+        // build the tree
         let mut sm = WeightedSelectionTree { data:nodes, upd_count:0, keys:keys };
         
         for (i, item) in items.iter().enumerate() {
@@ -61,10 +72,11 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         
         let levels = sm.levels_count();
         
-        if levels == 0 { return sm; }
-        
-        let level_from = Self::level_from(levels-1);
-        sm.update_ancestors_bulk(level_from, 2*level_from + 1);
+        // calculate order statistics
+        if levels != 0 {
+            let level_from = Self::level_from(levels-1);
+            sm.update_ancestors_bulk(level_from, 2*level_from + 1);
+        }
         
         sm
     }
@@ -430,7 +442,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     #[inline]
     unsafe fn score_at_unchecked(&self, idx: NdIndex) -> f32 {
-        self.data[idx].item.weight()
+        self.data.get_unchecked(idx).item.weight()
     }
     
     #[inline]
@@ -444,7 +456,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     #[inline]
     unsafe fn total_at_unchecked(&self, idx: NdIndex) -> f32 {
-        self.data[idx].total
+        self.data.get_unchecked(idx).total
     }
     
     #[inline]
