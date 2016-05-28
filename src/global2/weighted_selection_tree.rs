@@ -509,6 +509,113 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
 
 
 
+trait WeightedSelectionTreeCopy<K: Key, It: Item<K>> {
+    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It>;
+}
+
+
+impl<K: Key, It: Item<K>> WeightedSelectionTreeCopy<K, It> for WeightedSelectionTree<K, It> {
+    #[inline(never)]
+    default fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It> {
+        let mut removed = Vec::with_capacity(rm_len);
+        
+        let new_len = self.data.len() - rm_len; 
+        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
+        let removed_ptr = removed.as_mut_ptr();
+        
+        for i in 0..rm_len {
+            let node = &mut self.data[new_len+i];
+            let iremoved = displaced_assoc[i];
+            let rm_ptr = unsafe { removed_ptr.offset(iremoved as isize) };
+            let target_idx = rm_indices[iremoved];
+            if target_idx < new_len {
+                self.keys[node.item.key().usize()] = Some(target_idx);
+                unsafe {
+                    let d_ptr = &mut (*data_ptr.offset(target_idx as isize)).item;
+                    ptr::copy_nonoverlapping(d_ptr, rm_ptr, 1);
+                    ptr::copy_nonoverlapping(&node.item, d_ptr, 1);
+                }
+                upd_set.push(target_idx);
+            } else {
+                unsafe {
+                    ptr::copy_nonoverlapping(&node.item, rm_ptr, 1);
+                }
+            }
+        }
+        
+        unsafe {
+            self.data.set_len(new_len);
+            removed.set_len(rm_len);
+        }
+        
+        removed
+    }
+}
+
+
+
+
+use common::{PlacementId, Align64};
+use super::data::ScoredMove;
+
+struct AlignedItem {
+    it: ScoredMove,
+    
+    _align: [Align64;0],
+}
+
+#[inline]
+unsafe fn write_aligned(rm_ptr: *mut AlignedItem, src: AlignedItem) {
+    ptr::write(rm_ptr, src);
+}
+    
+// TODO: this does not currently provide any performance benefits. See https://github.com/rust-lang/rust/issues/33923
+impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTree<PlacementId, ScoredMove> {
+    #[inline(never)]
+    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<ScoredMove> {
+//        println!("sz(scmv)={}, sz(al)={}", mem::size_of::<ScoredMove>(), mem::size_of::<AlignedItem>());
+        let mut removed: Vec<AlignedItem> = Vec::with_capacity(rm_len);
+        
+        let new_len = self.data.len() - rm_len; 
+        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
+        let removed_ptr = removed.as_mut_ptr();
+        
+        for i in 0..rm_len {
+            let node = &mut self.data[new_len+i];
+            let iremoved = displaced_assoc[i];
+            let rm_ptr: *mut AlignedItem = unsafe { removed_ptr.offset(iremoved as isize) };
+            let target_idx = rm_indices[iremoved];
+            unsafe {
+                if target_idx < new_len {
+                    self.keys[node.item.key().usize()] = Some(target_idx);
+                    
+                    let src_ptr: *mut ScoredMove = &mut (*data_ptr.offset(target_idx as isize)).item;
+                    let src: ScoredMove = ptr::read(src_ptr);
+                    let src: AlignedItem = mem::transmute(src);
+                    write_aligned(rm_ptr, src);
+                    ptr::copy_nonoverlapping(&node.item, src_ptr, 1);
+                    
+                    upd_set.push(target_idx);
+                } else {
+                    let _rm_ptr: *mut ScoredMove = mem::transmute(rm_ptr);
+                    ptr::copy_nonoverlapping(&node.item, _rm_ptr, 1);
+                }
+            }
+        }
+        
+        unsafe {
+            self.data.set_len(new_len);
+            removed.set_len(rm_len);
+            
+            mem::transmute(removed)
+        }
+    }
+}
+
+
+
+
+
 #[cfg(test)]
 mod tests {
     use super::WeightedSelectionTree;
@@ -694,110 +801,3 @@ mod tests {
         )
     }
 }
-
-
-
-
-trait WeightedSelectionTreeCopy<K: Key, It: Item<K>> {
-    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It>;
-}
-
-
-impl<K: Key, It: Item<K>> WeightedSelectionTreeCopy<K, It> for WeightedSelectionTree<K, It> {
-    #[inline(never)]
-    default fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It> {
-        let mut removed = Vec::with_capacity(rm_len);
-        
-        let new_len = self.data.len() - rm_len; 
-        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
-        let removed_ptr = removed.as_mut_ptr();
-        
-        for i in 0..rm_len {
-            let node = &mut self.data[new_len+i];
-            let iremoved = displaced_assoc[i];
-            let rm_ptr = unsafe { removed_ptr.offset(iremoved as isize) };
-            let target_idx = rm_indices[iremoved];
-            if target_idx < new_len {
-                self.keys[node.item.key().usize()] = Some(target_idx);
-                unsafe {
-                    let d_ptr = &mut (*data_ptr.offset(target_idx as isize)).item;
-                    ptr::copy_nonoverlapping(d_ptr, rm_ptr, 1);
-                    ptr::copy_nonoverlapping(&node.item, d_ptr, 1);
-                }
-                upd_set.push(target_idx);
-            } else {
-                unsafe {
-                    ptr::copy_nonoverlapping(&node.item, rm_ptr, 1);
-                }
-            }
-        }
-        
-        unsafe {
-            self.data.set_len(new_len);
-            removed.set_len(rm_len);
-        }
-        
-        removed
-    }
-}
-
-
-
-
-use common::{PlacementId, Align64};
-use super::data::ScoredMove;
-
-struct AlignedItem {
-    it: ScoredMove,
-    
-    _align: [Align64;0],
-}
-
-#[inline]
-unsafe fn write_aligned(rm_ptr: *mut AlignedItem, src: AlignedItem) {
-    ptr::write(rm_ptr, src);
-}
-    
-// TODO: this does not currently provide any performance benefits. See https://github.com/rust-lang/rust/issues/33923
-impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTree<PlacementId, ScoredMove> {
-    #[inline(never)]
-    fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<ScoredMove> {
-//        println!("sz(scmv)={}, sz(al)={}", mem::size_of::<ScoredMove>(), mem::size_of::<AlignedItem>());
-        let mut removed: Vec<AlignedItem> = Vec::with_capacity(rm_len);
-        
-        let new_len = self.data.len() - rm_len; 
-        let data_ptr = self.data.as_mut_ptr(); // we need the pointers to overcome the borrow checker that otherwise complains about two mutable references to data
-        let removed_ptr = removed.as_mut_ptr();
-        
-        for i in 0..rm_len {
-            let node = &mut self.data[new_len+i];
-            let iremoved = displaced_assoc[i];
-            let rm_ptr: *mut AlignedItem = unsafe { removed_ptr.offset(iremoved as isize) };
-            let target_idx = rm_indices[iremoved];
-            unsafe {
-                if target_idx < new_len {
-                    self.keys[node.item.key().usize()] = Some(target_idx);
-                    
-                    let src_ptr: *mut ScoredMove = &mut (*data_ptr.offset(target_idx as isize)).item;
-                    let src: ScoredMove = ptr::read(src_ptr);
-                    let src: AlignedItem = mem::transmute(src);
-                    write_aligned(rm_ptr, src);
-                    ptr::copy_nonoverlapping(&node.item, src_ptr, 1);
-                    
-                    upd_set.push(target_idx);
-                } else {
-                    let _rm_ptr: *mut ScoredMove = mem::transmute(rm_ptr);
-                    ptr::copy_nonoverlapping(&node.item, _rm_ptr, 1);
-                }
-            }
-        }
-        
-        unsafe {
-            self.data.set_len(new_len);
-            removed.set_len(rm_len);
-            
-            mem::transmute(removed)
-        }
-    }
-}
-
