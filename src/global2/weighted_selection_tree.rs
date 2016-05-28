@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use std::mem::size_of;
 use std::mem;
 use std::ptr;
@@ -39,7 +41,6 @@ pub struct WeightedSelectionTree<K: Key, It: Item<K>> {
 }
 
 
-#[allow(non_snake_case)]
 impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     #[inline(never)]
     pub fn new(items: &[It], max_keys: usize) -> WeightedSelectionTree<K, It> {
