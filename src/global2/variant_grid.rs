@@ -19,6 +19,7 @@ pub struct VariantGrid {
 }
 
 impl VariantGrid {
+    #[inline(never)]
     pub fn new(places: Rc<Vec<Placement>>, h: dim, w: dim) -> VariantGrid {
         let sizes = places.iter().map(|place| place.word.len()).collect::<Vec<_>>();
         let mut entries = SlicedArena::new(&sizes);
@@ -44,6 +45,7 @@ impl VariantGrid {
         self.field[MatrixDim(y, x)].iter()
     }
     
+    #[inline(never)]
     pub fn remove_incompat(&mut self, place_id: PlacementId) -> Vec<PlacementId> {
         let dic = self.places.clone();
         let place = &dic[place_id];
@@ -142,6 +144,7 @@ impl VariantGrid {
     }
     
     
+    #[inline(never)]
     pub fn remove(&mut self, entry_id: PlacementId) {
         // to satisfy the borrow checker, do 2 passes: first collect indices to remove, then remove them
         let to_remove = {

@@ -56,6 +56,7 @@ pub struct FixedGrid<'a, Move: PlaceMove> {
 }
 
 impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
+    #[inline(never)]
 	pub fn new(h: dim, w: dim, rng: &'a AbstractRng) -> FixedGrid<'a, Move> {
 		FixedGrid { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
 	}
@@ -102,6 +103,7 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 	}
 	
 	/// Returns 1 for every letter intersected on the board.
+    #[inline(never)]
 	pub fn efficiency(&self) -> Eff {
 		let intersections = self.moves.values().fold(0, |acc, bmv| { 
 				let place = bmv.mv.place();
@@ -148,7 +150,7 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 		adjacencies
 	}
 	
-	
+    #[inline(never)]
 	pub fn fixup_adjacent(mut self) -> (Vec<Move>, Eff) {
 		// 1. build the dependency graph, so that when we start removing Moves, we know exactly which other Moves we're breaking
 		struct AdjacencyTracker {

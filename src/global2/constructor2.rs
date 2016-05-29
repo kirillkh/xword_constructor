@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::Cell;
 use rand::distributions::Range;
 
-use common::{dim, Placement, PlacementId, Word, WordId, make_rng, AbstractRng};
+use common::{dim, Placement, PlacementId, Word, make_rng, AbstractRng};
 use fastmath::fastexp;
 use fixed_grid::{FixedGrid, Eff, AdjacencyInfo, PlaceMove};
 use super::weighted_selection_tree::{WeightedSelectionTree, Item};
@@ -201,13 +201,14 @@ impl Constructor {
 	}
 	
 	
+    #[inline(never)]
 	fn remove_incompat(&self, mv: &ScoredMove, 
                 	   grid: &mut VariantGrid, 
                 	   select_tree: &mut SelectTree, 
                 	   resolution_map: &mut ResolutionMap)  -> Vec<ScoredMove> {
 	    // 1. remove all placements of this word
 	    let word_placements = &self.placements_per_word[mv.place.word.id as usize];
-	    let mut rmvd_word_moves = Vec::with_capacity(word_placements.len());
+	    let mut rmvd_word_moves: Vec<ScoredMove> = Vec::with_capacity(word_placements.len());
 	    for &pid in word_placements {
 	        if grid.contains(pid) {
     	        grid.remove(pid);
@@ -297,6 +298,7 @@ impl Constructor {
     	ChosenMove(mv.place.clone(), Rc::new(excl_keys))
 	}
 	
+    #[inline(never)]
 	fn nrpa_place<'a, 'b>(&'b mut self, chosen: ChosenMove,
 		    	  		  fixed_grid: &mut FixedGrid<ChosenMove>,
 		    	  		  variant_grid: &VariantGrid,
@@ -365,6 +367,7 @@ impl Constructor {
 	
 	
 	
+    #[inline(never)]
 	fn nrpa_monte_carlo(&mut self, policy: &[ScoredMove]) -> (ChosenSequence, ChosenSequence) {
 		let rng = self.rng.clone_to_box();
 		let mut fixed_grid = FixedGrid::new(self.h, self.w, &*rng);
