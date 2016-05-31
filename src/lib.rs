@@ -22,5 +22,5 @@ pub use self::common::{dim, Word, WordId, Orientation, Placement, PlacementId, M
 pub use self::global2::sliced_arena;
 
 pub mod util {
-	pub use common::{make_rng, AbstractRng};
+	pub use common::{make_rng, tl_rng, xor_rng, AbstractRng};
 }

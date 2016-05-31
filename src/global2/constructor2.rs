@@ -25,16 +25,16 @@ use super::variant_grid::{VariantGrid};
 
 // GREAT RESULTS!
 const NRPA_LEVEL: u8 = 3;
-const NRPA_ITERS: u32 = 27;
+const NRPA_ITERS: u32 = 30;
 //const NRPA_ALPHA: f32 = 0.03125;
 //const NRPA_ALPHA: f32 = 0.0625;
 //const NRPA_ALPHA: f32 = 0.125;
 //const NRPA_ALPHA: f32 = 0.25;
 //const NRPA_ALPHA: f32 = 0.5;
-const NRPA_ALPHA: f32 = 1.;
+const NRPA_ALPHA: f32 = 1.0;
 //const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
-const MAX_STALLED_ITERS: u32 = 1;
+const MAX_STALLED_ITERS: u32 = 0;
 
 
 //const NRPA_LEVEL: u8 = 2;
@@ -124,14 +124,15 @@ impl Constructor {
 	
 	pub fn construct(&mut self) -> Vec<Placement> {
 		let moves: Vec<_> = self.places.iter().map(|p| ScoredMove { place:p.clone(), score: 0., exp_score: 1. }).collect();
-		let (_, best_valid_seq) = self.nrpa(NRPA_LEVEL, &moves);
+        let mut variants = VariantGrid::new(self.places.clone(), self.h, self.w);
+		let (_, best_valid_seq) = self.nrpa(NRPA_LEVEL, &mut variants, &moves);
 		best_valid_seq.seq.into_iter().map(|mv| mv.0).collect()
 	}
 	
 	// http://www.chrisrosin.com/rosin-ijcai11.pdf
-	fn nrpa(&mut self, level: u8, parent_policy: &[ScoredMove]) -> (ChosenSequence, ChosenSequence) {
+	fn nrpa(&mut self, level: u8, variants: &mut VariantGrid, parent_policy: &[ScoredMove]) -> (ChosenSequence, ChosenSequence) {
 		if level == 0 {
-			self.nrpa_monte_carlo(parent_policy)
+			self.nrpa_monte_carlo(parent_policy, variants)
 		} else {
 			let mut parent_policy = parent_policy.to_vec();
 			let mut policy = parent_policy.to_vec();
@@ -143,7 +144,7 @@ impl Constructor {
 			let mut last_progress = 0;
 			
 			for iter in 0..NRPA_ITERS {
-				let (new_seq, new_valid_seq) = self.nrpa(level - 1, &policy);
+				let (new_seq, new_valid_seq) = self.nrpa(level - 1, variants, &policy);
 				self.debug1(level, &policy, &new_seq, &new_valid_seq); // TODO debug
 
 				if *new_valid_seq.eff >= *best_valid_seq.eff {
@@ -368,10 +369,10 @@ impl Constructor {
 	
 	
     #[inline(never)]
-	fn nrpa_monte_carlo(&mut self, policy: &[ScoredMove]) -> (ChosenSequence, ChosenSequence) {
+	fn nrpa_monte_carlo(&mut self, policy: &[ScoredMove], variants: &mut VariantGrid) -> (ChosenSequence, ChosenSequence) {
 		let rng = self.rng.clone_to_box();
 		let mut fixed_grid = FixedGrid::new(self.h, self.w, &*rng);
-        let mut variant_grid = VariantGrid::new(self.places.clone(), self.h, self.w);
+		let mut variants = variants.clone();
 		let mut best_seq = ChosenSequence::new(Vec::with_capacity(self.placements_per_word.len()), Eff(0));
 		{
             let mut select_tree: SelectTree = SelectTree::new(policy, policy.len());
@@ -380,7 +381,7 @@ impl Constructor {
 			
 			// random rollout according to the policy
 			while !select_tree.is_empty() || !resolution_map.is_empty() {
-				let chosen = self.nrpa_choose(&mut select_tree, &mut variant_grid, &mut resolution_map);
+				let chosen = self.nrpa_choose(&mut select_tree, &mut variants, &mut resolution_map);
 				{
 					// place the chosen move on the grid
 //					let success = self.nrpa_place(chosen.clone(), &refs, &mut grid, &mut resolution_map);
@@ -388,7 +389,7 @@ impl Constructor {
 //						let bs = best_seq.clone();
 //						return (best_seq, bs);
 //					}
-					self.nrpa_place(chosen.clone(), &mut fixed_grid, &variant_grid, &mut select_tree, &mut resolution_map);
+					self.nrpa_place(chosen.clone(), &mut fixed_grid, &mut variants, &mut select_tree, &mut resolution_map);
 					
 					// append the move to the seq
 					best_seq.seq.push(chosen);

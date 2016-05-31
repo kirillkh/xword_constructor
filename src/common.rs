@@ -1,6 +1,5 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, IndexMut, Deref};
-use std::rc::Rc;
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, OwnedArray};
 use rand::{SeedableRng, XorShiftRng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
@@ -158,7 +157,7 @@ impl Orientation {
 
 
 //---- Placement -----------------------------------------------------------------------
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct PlacementId(pub usize);
 
 //type PlacementId = u32;
@@ -265,14 +264,22 @@ impl Placement {
 		or.align(self.y, self.x)
 	}
 	
+	#[inline]
 	pub fn fold_positions<A, F>(&self, init: A, mut f: F) -> A 
 			where F: FnMut(A, dim, dim) -> A {
+		self.fold_positions_index(init, |acc, y, x, _| f(acc, y, x))
+	}
+	
+	#[inline]
+	pub fn fold_positions_index<A, F>(&self, init: A, mut f: F) -> A 
+			where F: FnMut(A, dim, dim, dim) -> A {
 		let (y, x, len) = (self.y, self.x, self.word.len() as dim);
 		let (yc, xc) = self.orientation.align(0, 1);
 		
 		let mut acc = init;
 		for i in 0..len {
-			acc = f(acc, y + i.cond(yc), x + i.cond(xc));
+		    let (dy, dx) = (i.cond(yc), i.cond(xc));
+			acc = f(acc, y + dy, x + dx, dy | dx);
 		}
 		acc
 	}
@@ -328,9 +335,26 @@ pub struct Problem {
 }
 
 impl Problem {
-	pub fn new(dic: Vec<Word>, dic_arena: SlicedArena<u8>, board: OwnedArray<bool, MatrixDim>) -> Problem {
+	pub fn new(dic: Vec<Vec<u8>>, board: OwnedArray<bool, MatrixDim>) -> Problem {
+    	let (dic, dic_arena) = Self::dic_arena(dic);
 		Problem { dic:dic, dic_arena:dic_arena, board:board }
 	}
+	
+    fn dic_arena(dic: Vec<Vec<u8>>) -> (Vec<Word>, SlicedArena<u8>) {
+    	let word_lens: Vec<usize> = dic.iter().map(|wordv| wordv.len()).collect();
+    	let mut dic_arena: SlicedArena<u8> = SlicedArena::new(&word_lens);
+    	let mut dicw: Vec<Word> = Vec::with_capacity(dic.len());
+    	for (i, wordv) in dic.into_iter().enumerate() {
+    	    {
+        	    let slice: &mut [u8] = dic_arena.slice_mut(i);
+        	    slice.clone_from_slice(&wordv);
+    	    }
+    	    let slice: &'static [u8] = unsafe { mem::transmute(dic_arena.slice(i)) };
+    	    dicw.push(Word::new(i, slice));
+    	}
+    	
+    	(dicw, dic_arena)
+    }
 }
 
 
@@ -341,7 +365,7 @@ impl Problem {
 //	(a & -f) as u8
 //}
 
-trait Cond {
+pub trait Cond {
 	#[inline]
 	fn cond(self, flag: Self) -> Self;
 }
@@ -353,10 +377,10 @@ trait Cond {
 //	}
 //}
 
-impl Cond for dim {
+impl Cond for usize {
 	#[inline]
 	fn cond(self, flag: Self) -> Self {
-		let (a, f) = (self as i64, flag as i64);
+		let (a, f) = (self as isize, flag as isize);
 		(a & -f) as Self
 	}
 }
@@ -436,6 +460,15 @@ impl AbstractRng for XORRng {
 
 
 
+pub fn xor_rng() -> Box<AbstractRng> {
+	let seed: [u32;4] = [27, 81, 3, 555];
+    Box::new(XORRng(XorShiftRng::from_seed(seed)))
+}
+
+pub fn tl_rng() -> Box<AbstractRng> {
+	Box::new(TLRng)
+}
+
 pub fn make_rng() -> Box<AbstractRng> {
 //	Box::new(XRng(XorShiftRng::from_seed(seed)))
 //	Box::new(TLRng)
@@ -504,8 +537,8 @@ mod placement_tests {
     use super::*;
 	use super::Orientation::*;
 
-	fn word(wid: WordId, str: &[u8]) -> Word {
-		Word::new(wid, str.to_vec().into_boxed_slice())
+	fn word(wid: WordId, str: &'static [u8]) -> Word {
+		Word::new(wid, str)
 	}
 	
 	fn place(pid: usize, or: Orientation, y: dim, x: dim, word: Word) -> Placement {
@@ -514,8 +547,8 @@ mod placement_tests {
 	
     #[test]
     fn incompat_overlap() {
-    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
-    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let word1 = Word::new(0, b"abc");
+    	let word2 = Word::new(1, b"ab");
     	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
     	let p2 = Placement::new(1, Orientation::HOR, 0, 0, word2);
     	
@@ -525,8 +558,8 @@ mod placement_tests {
 	
     #[test]
     fn incompat_adjacent() {
-    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
-    	let word2 = Word::new(1, b"ab".to_vec().into_boxed_slice());
+    	let word1 = Word::new(0, b"abc");
+    	let word2 = Word::new(1, b"ab");
     	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
     	let p2 = Placement::new(1, Orientation::VER, 1, 2, word2);
     	
@@ -536,8 +569,8 @@ mod placement_tests {
 	
     #[test]
     fn incompat_intersection() {
-    	let word1 = Word::new(0, b"abc".to_vec().into_boxed_slice());
-    	let word2 = Word::new(1, b"bb".to_vec().into_boxed_slice());
+    	let word1 = Word::new(0, b"abc");
+    	let word2 = Word::new(1, b"bb");
     	let p1 = Placement::new(0, Orientation::HOR, 0, 0, word1);
     	let p2 = Placement::new(1, Orientation::VER, 0, 0, word2);
     	

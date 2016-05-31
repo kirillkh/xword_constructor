@@ -4,8 +4,6 @@ extern crate ndarray;
 extern crate rand;
 extern crate getopts;
 
-mod dic_arena;
-
 use getopts::Options;
 use std::env;
 
@@ -173,7 +171,13 @@ fn read_problem(file: &str) -> Vec<u8> {
 
 
 fn parse_problem(bytes: Vec<u8>) -> Problem {
-	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})[\r\n]+((?:[_#]+[\r\n]{1,2})+)-----((?:[\r\n]{1,2}[a-z]+)+)[\r\n]*$").unwrap();
+    let bytes = bytes.into_iter().map(|b| if b'A'<=b && b<=b'Z' {
+            b'a' + b - b'A'
+        } else {
+            b
+        }
+    ).collect::<Vec<_>>();
+	let re = Regex::new(r"^(?m)(\d{1,3})x(\d{1,3})[\r\n]+((?:[_#]+[\r\n]{1,2})+)-----((?:[\r\n]{1,2}[a-z' ,!-]+)+)[\r\n]*$").unwrap();
 	let caps = re.captures(&bytes).unwrap();
 	
 	let h = str::from_utf8(caps.at(1).unwrap()).unwrap().parse::<dim>().unwrap();
@@ -189,8 +193,6 @@ fn parse_problem(bytes: Vec<u8>) -> Problem {
         dic.push(word);
     }
     
-	let (dic, dic_arena) = dic_arena::dic_arena(dic);
-	
 	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
 	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
     for (j, cap) in re.captures_iter(board_str).enumerate() {
@@ -204,7 +206,9 @@ fn parse_problem(bytes: Vec<u8>) -> Problem {
     	}
     }
     
-    Problem::new(dic, dic_arena, board)
+//	let (dic, dic_arena) = dic_arena::dic_arena(dic);
+	
+    Problem::new(dic, board)
 }
 
 
@@ -220,14 +224,14 @@ mod placement_tests {
 	use xword::*;
 	use ndarray::*;
 
-	fn word(wid: WordId, str: &[u8]) -> Word {
-		Word::new(wid, str.to_vec().into_boxed_slice())
+	fn word(str: &'static [u8]) -> Vec<u8> {
+        str.to_vec()
 	}
 	
 	#[test]
 	fn placement_ids_are_nat() {
 		let grid: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(4, 3));
-		let words = vec![word(0, b"ab"), word(1, b"bc"), word(2, b"cde"), word(3, b"cdef"), word(4, b"fedc"), word(5, b"fedcb")];
+		let words = vec![word(b"ab"), word(b"bc"), word(b"cde"), word(b"cdef"), word(b"fedc"), word(b"fedcb")];
 		let problem = Problem::new(words, grid);
 		let places = super::gen_placements(&problem);
 		

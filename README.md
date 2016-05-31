@@ -3,10 +3,10 @@ Constructs crosswords using the NRPA algorithm (Monte Carlo Tree Search): http:/
 
 Running instructions:
 
-1. install Rust and Cargo
+1. install a nightly build of Rust and Cargo
 2. `git clone https://github.com/kirillkh/xword_constructor.git`
 3. `cd xword_constructor`
-4. `cargo run --bin probgen` to generate a problem
+4. `cargo run --bin probgen` to generate out_problem.xword
 5. `./run_xword.sh <PROBLEM FILE>` (or `cargo run --release --bin xword <PROBLEM FILE>` if you're on Windows) to solve the given problem
 
 The project builds two binaries: probgen and xword. 

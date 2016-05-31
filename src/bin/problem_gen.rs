@@ -3,8 +3,6 @@ extern crate regex;
 extern crate ndarray;
 extern crate rand;
 
-mod dic_arena;
-
 use std::str;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
@@ -15,9 +13,8 @@ use regex::bytes::Regex;
 use ndarray::{OwnedArray, Axis, ArrayView};
 use rand::distributions::Range;
 
-use xword::{dim, MatrixDim, LineDim, Problem, Orientation, Word};
-use xword::util::{make_rng, AbstractRng};
-use xword::sliced_arena::SlicedArena;
+use xword::{dim, MatrixDim, LineDim, Problem, Orientation};
+use xword::util::tl_rng;
 
 fn main() {
     let bytes = read_template();
@@ -34,7 +31,7 @@ fn main() {
 }
 
 fn print(filled: &OwnedArray<u8, MatrixDim>) {
-	for (MatrixDim(y, x), c) in filled.indexed_iter() {
+	for (MatrixDim(_, x), c) in filled.indexed_iter() {
 		if x==0 {
 			print!("\n");
 		}
@@ -44,7 +41,7 @@ fn print(filled: &OwnedArray<u8, MatrixDim>) {
 }
 
 fn fill(templ: &mut OwnedArray<u8, MatrixDim>) {
-	let rng = make_rng();
+	let rng = tl_rng();
 	let range = Range::new(b'a', b'z');
 	
 	for j in 0..templ.dim()[0] {
@@ -67,7 +64,7 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 	
 	let mut dic : Vec<Vec<u8>> = vec![];
 	
-	let mut add_word = |dic: &mut Vec<_>, line: &ArrayView<_, _>, from, to| {
+	let add_word = |dic: &mut Vec<_>, line: &ArrayView<_, _>, from, to| {
 		if to - from > 1 {
 			let v : Vec<u8> = line.iter()
 				.skip(from)
@@ -98,8 +95,6 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 		}
 	}
 	
-	let (dic, dic_arena) = dic_arena::dic_arena(dic);
-
 	for j in 0 .. templ.dim()[0] {
 		for i in 0 .. templ.dim()[1] {
 			let idx = MatrixDim(j, i);
@@ -110,7 +105,7 @@ fn gen_problem(templ: &mut OwnedArray<u8, MatrixDim>) -> Problem {
 		}
 	}
 	
-	Problem::new(dic, dic_arena, board)
+	Problem::new(dic, board)
 }
 
 fn write_problem(problem: &Problem) {
@@ -132,7 +127,7 @@ fn write_problem(problem: &Problem) {
 	let dim_str = format!("{}x{}", dim[0], dim[1]);
 	content.extend(dim_str.as_bytes());
 	
-	for (MatrixDim(y, x), &c) in problem.board.indexed_iter() {
+	for (MatrixDim(_, x), &c) in problem.board.indexed_iter() {
 //		println!("x={}, y={}", x, y);
 		if x==0 {
 			content.push(b'\n');

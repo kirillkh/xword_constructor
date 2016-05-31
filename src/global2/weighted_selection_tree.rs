@@ -43,7 +43,7 @@ pub struct WeightedSelectionTree<K: Key, It: Item<K>> {
 
 
 impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
-    #[inline(never)]
+//    #[inline(never)]
     pub fn new(items: &[It], max_keys: usize) -> WeightedSelectionTree<K, It> {
         let keys: Vec<Option<NdIndex>> = vec![None; max_keys];
         
@@ -90,7 +90,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         self.data.is_empty()
     }
     
-    #[inline(never)]
+//    #[inline(never)]
     fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<NdIndex>) -> Vec<bool> {
         let mut displaced_keep = vec![true; rm_indices.len()];
         let new_len = self.data.len();
@@ -109,7 +109,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
 
     #[no_mangle]
-    #[inline(never)]
+//    #[inline(never)]
     pub fn remove_bulk(&mut self, keys: &[K]) -> Vec<It> {
         self.upd_count += 1;
 
@@ -175,7 +175,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         removed
     }
 
-    #[inline(never)]
+//    #[inline(never)]
     fn remove_bulk__levels(&mut self, mut upd_set: Vec<NdIndex>) {
         if self.data.len() == 0 { return; }
         
@@ -234,7 +234,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
-    #[inline(never)]
+//    #[inline(never)]
     pub fn select_remove(&mut self, x: f32) -> Option<It> {
         let idx = self.find_idx(x, 0);
         let len = self.data.len();
@@ -248,7 +248,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
     }
     
-    #[inline(never)]
+//    #[inline(never)]
     pub fn remove(&mut self, k: K) -> It {
         let idx: NdIndex = self.remove_key(k).unwrap();
         self.remove_idx(idx)
@@ -314,7 +314,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
 
     // Note: it's caller's responsibility to check that the keys are not already in the tree.
-    #[inline(never)]
+//    #[inline(never)]
     pub fn insert_bulk(&mut self, entries: Vec<(K, It)>) { // TODO: we don't need to pass keys in Vec<(Key, It)>, we can get keys from the items 
         let len = self.data.len();
         let upd_from = len;
@@ -334,7 +334,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     
     
-    #[inline(never)]
+//    #[inline(never)]
     fn find_idx(&self, mut x: f32, root: NdIndex) -> NdIndex {
         let mut curr = root;
         let len = self.data.len();
@@ -365,7 +365,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     }
     
     
-    #[inline(never)]
+//    #[inline(never)]
     fn remove_idx(&mut self, idx: NdIndex) -> It {
         let last = self.remove_last();
         let removed = if idx == self.data.len() {
@@ -422,7 +422,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         }
     }
     
-    #[inline(never)]
+//    #[inline(never)]
     fn update_ancestors_bulk(&mut self, mut changed_from: NdIndex, mut changed_to: NdIndex) {
         // this is a simple algorithm, complicated only by the programmer's obsessive desire to save a few cycles on bounds checking
          
@@ -607,7 +607,7 @@ trait WeightedSelectionTreeCopy<K: Key, It: Item<K>> {
 
 
 impl<K: Key, It: Item<K>> WeightedSelectionTreeCopy<K, It> for WeightedSelectionTree<K, It> {
-    #[inline(never)]
+//    #[inline(never)]
     default fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<It> {
         let mut removed = Vec::with_capacity(rm_len);
         
@@ -656,7 +656,7 @@ struct AlignedItem {
 
 // TODO: this does not currently provide any performance benefits. See https://github.com/rust-lang/rust/issues/33923
 impl WeightedSelectionTreeCopy<PlacementId, ScoredMove> for WeightedSelectionTree<PlacementId, ScoredMove> {
-    #[inline(never)]
+//    #[inline(never)]
     fn remove_bulk__copy(&mut self, upd_set:&mut Vec<NdIndex>, rm_len:usize, displaced_assoc: Vec<usize>, rm_indices: Vec<usize>) -> Vec<ScoredMove> {
 //        println!("sz(scmv)={}, sz(al)={}", mem::size_of::<ScoredMove>(), mem::size_of::<AlignedItem>());
         let mut removed: Vec<AlignedItem> = Vec::with_capacity(rm_len);
@@ -706,7 +706,9 @@ mod tests {
     use test::black_box;
     
     
-    impl Key for i32 {}
+    impl Key for i32 {
+        fn usize(self) -> usize { self as usize }
+    }
     
     #[derive(Debug, PartialEq, Clone)]
     struct Item0 {
@@ -738,7 +740,7 @@ mod tests {
     
     fn sm_items(v: Vec<i32>) -> WeightedSelectionTree<i32, Item0> {
         let items = items(v);
-        WeightedSelectionTree::new(&items)
+        WeightedSelectionTree::new(&items, items.len())
     }
     
     fn check_tree<It: Item<i32>>(sm: &mut WeightedSelectionTree<i32, It>) -> bool {
@@ -781,27 +783,27 @@ mod tests {
         assert!(check_tree(&mut sm));
     }
     
-    #[test]
-    fn test_displace_last_n() {
-        let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.displace_last_n(3) == items(vec![1, 2, 3]));
-        
-        let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.displace_last_n(1) == items(vec![3]));
-        
-        let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.displace_last_n(2) == items(vec![2, 3]));
-        
-        let mut sm = sm_items(vec![0, 1, 2, 3]);
-        assert!(sm.displace_last_n(4) == items(vec![0, 1, 2, 3]));
-        
-        let mut sm = sm_items(vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
-        assert!(sm.displace_last_n(4) == items(vec![5, 6, 7, 8]));
-        assert!(sm.data.len() == 9-4);
-        assert!(check_tree(&mut sm));
-        
-        println!("{:?}", sm)
-    }
+//    #[test]
+//    fn test_displace_last_n() {
+//        let mut sm = sm_items(vec![0, 1, 2, 3]);
+//        assert!(sm.displace_last_n(3) == items(vec![1, 2, 3]));
+//        
+//        let mut sm = sm_items(vec![0, 1, 2, 3]);
+//        assert!(sm.displace_last_n(1) == items(vec![3]));
+//        
+//        let mut sm = sm_items(vec![0, 1, 2, 3]);
+//        assert!(sm.displace_last_n(2) == items(vec![2, 3]));
+//        
+//        let mut sm = sm_items(vec![0, 1, 2, 3]);
+//        assert!(sm.displace_last_n(4) == items(vec![0, 1, 2, 3]));
+//        
+//        let mut sm = sm_items(vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+//        assert!(sm.displace_last_n(4) == items(vec![5, 6, 7, 8]));
+//        assert!(sm.data.len() == 9-4);
+//        assert!(check_tree(&mut sm));
+//        
+//        println!("{:?}", sm)
+//    }
     
     fn remove_bulk_testcase(nkeys: usize, remove: Vec<i32>) {
         let keys = (0..nkeys as i32).into_iter().collect::<Vec<i32>>();
@@ -813,7 +815,7 @@ mod tests {
         let mut present = vec![false; nkeys];
          
         for node in sm.data.iter() {
-            present[node.item.key as NdIndex] = true; 
+            present[node.item.key as usize] = true; 
         }
         assert!(present == should_be_present);
         assert!(check_tree(&mut sm));
