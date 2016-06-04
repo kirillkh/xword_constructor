@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::rc::Rc;
+use std::f32;
 use std::cell::Cell;
 use rand::distributions::Range;
 
@@ -24,8 +25,15 @@ use super::variant_grid::{VariantGrid};
 //const NRPA_ALPHA: f32 = 0.125;
 
 // GREAT RESULTS!
+//const NRPA_LEVEL: u8 = 4;
+
+//const NRPA_LEVEL: u8 = 3;
+//const NRPA_ITERS: u32 = 42;
+
 const NRPA_LEVEL: u8 = 3;
-const NRPA_ITERS: u32 = 30;
+const NRPA_ITERS: u32 = 100;
+
+
 //const NRPA_ALPHA: f32 = 0.03125;
 //const NRPA_ALPHA: f32 = 0.0625;
 //const NRPA_ALPHA: f32 = 0.125;
@@ -34,7 +42,7 @@ const NRPA_ITERS: u32 = 30;
 const NRPA_ALPHA: f32 = 1.0;
 //const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
-const MAX_STALLED_ITERS: u32 = 0;
+const MAX_STALLED_ITERS: u32 = 2;
 
 
 //const NRPA_LEVEL: u8 = 2;
@@ -71,12 +79,12 @@ const MAX_STALLED_ITERS: u32 = 0;
 //const NRPA_ALPHA: f32 = 1.6; // 10+
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct AdjacencyRec {
 	counter: Rc<Cell<usize>>
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct AdjacencyResolver {
 	mv: ScoredMove,
 	adjs: Vec<AdjacencyRec> // TODO: do we want to box this, so that copying adjacencyresolvers around is faster?
@@ -140,6 +148,7 @@ impl Constructor {
 				
 			let mut best_valid_seq = ChosenSequence::default();
 			let mut best_saved_seq = ChosenSequence::default();
+			let mut best_valid_saved_seq = ChosenSequence::default();
 			
 			let mut last_progress = 0;
 			
@@ -147,10 +156,6 @@ impl Constructor {
 				let (new_seq, new_valid_seq) = self.nrpa(level - 1, variants, &policy);
 				self.debug1(level, &policy, &new_seq, &new_valid_seq); // TODO debug
 
-				if *new_valid_seq.eff >= *best_valid_seq.eff {
-					best_valid_seq = new_valid_seq;
-				}
-				
 				let max_stall = MAX_STALLED_ITERS + (level as u32);
 				
 				let must_backtrack = (*new_seq.eff <= *best_seq.eff) && (iter - last_progress >= max_stall);
@@ -161,41 +166,53 @@ impl Constructor {
 					policy = self.nrpa_backtrack(&best_seq.seq, policy, &mut parent_policy);
 					best_seq.seq.truncate(0);
 					best_seq.eff = Eff(0);
+					best_valid_seq.seq.truncate(0);
+					best_valid_seq.eff = Eff(0);
 					last_progress = iter;
 				} else {
-					if *new_seq.eff >= *best_seq.eff {
-						if *new_seq.eff > *best_seq.eff {
+					if *new_valid_seq.eff >= *best_valid_seq.eff {
+						if *new_valid_seq.eff > *best_valid_seq.eff {
 							last_progress = iter;
 						}
 						
 						best_seq = new_seq;
+						best_valid_seq = new_valid_seq;
 						
-						if *best_seq.eff >= *best_saved_seq.eff {
+						if *best_valid_seq.eff >= *best_valid_saved_seq.eff {
 							best_saved_seq = best_seq.clone();
+							best_valid_saved_seq = best_valid_seq.clone();
 						}
-					} else {
-//						moves = self.nrpa_adapt(moves, &best_valid_seq);
 					}
-					policy = self.nrpa_adapt(policy, &best_seq.seq);
+					policy = self.nrpa_adapt(policy, &best_valid_seq.seq);
 				}
 				
 			}
 			
 			self.debug3(level, &best_seq); // TODO debug
 			
-			(best_saved_seq, best_valid_seq)
+			(best_saved_seq, best_valid_saved_seq)
 		}
 	}
 	
 	
 	fn nrpa_backtrack(&self, seq: &[ChosenMove], mut moves: Policy, parent_moves: &mut Policy) -> Policy {
 		let z : f32 = parent_moves.iter().fold(0., |acc, mv| acc+mv.exp_score);
+//		{
+//			let chosen = &mut policy[chosen_id];
+//			z += chosen.exp_score;
+//			debug_assert!(z > 0.0);
+//			
+//			chosen.score += NRPA_ALPHA - NRPA_ALPHA * chosen.exp_score / z;
+//			chosen.exp_score = Self::exp_score(chosen);
+//		}
 		
 		for &ChosenMove(ref place, _) in seq {
 			let chosen_id = place.id;
 			let parent_move = &mut parent_moves[chosen_id];
 			parent_move.score -= NRPA_ALPHA * parent_move.exp_score / z;
+			parent_move.exp_score = Self::exp_score(parent_move);
 			moves[chosen_id].score = parent_move.score;
+			moves[chosen_id].exp_score = parent_move.exp_score;
 		}
 	
 		moves
@@ -361,6 +378,15 @@ impl Constructor {
 	
 	fn select_proportional<T: Item<PlacementId>>(&mut self, select_tree: &mut WeightedSelectionTree<PlacementId, T>) -> T {
 		let z : f32 = select_tree.total();
+		
+		// DEBUG
+//		if z <= 0. || !(z>0.) {
+		debug_assert!(!z.is_nan());
+		if z <= 0. {
+		    debug_assert!(select_tree.len() == 1);
+    		return select_tree.select_remove(0.0).unwrap()
+		}
+		 
 		let between = Range::new(0., z);
 		let v = self.rng.gen_f32(between);
 		select_tree.select_remove(v).unwrap()
@@ -411,7 +437,29 @@ impl Constructor {
 	
 	
 	fn exp_score(mv: &ScoredMove) -> f32 {
-		fastexp(mv.score + (mv.place.word.str.len() as f32))
+//		let s = fastexp(mv.score + (mv.place.word.str.len() as f32));
+//		if s <= 0.0 {
+//		    let s2 = (mv.score + (mv.place.word.str.len() as f32)).exp();
+//		    if s2.is_infinite() {
+//		        f32::MAX
+//		    } else {
+//    		    s2
+//		    }
+//		} else {
+//		    s
+//		}
+		let s = (mv.score + (mv.place.word.str.len() as f32)).exp();
+	    if s.is_infinite() || s > 1.0e8 {
+//	        f32::MAX
+            1.0e8
+	    } else {
+	        if s.is_nan() {
+	            println!("S IS NAN!!!! score={}, full={}, max={}", mv.score, mv.score + (mv.place.word.str.len() as f32), f32::MAX);
+//	        } else if s <= 0.000000000000001 {
+//	            println!("S <= 0.000000001!!!! score={}, full={}, max={}", mv.score, mv.score + (mv.place.word.str.len() as f32), f32::MAX);
+	        }
+		    s
+	    }
 	}
 	
 	
@@ -419,9 +467,18 @@ impl Constructor {
 		{
 			for &ChosenMove(ref place, ref excl) in seq {
 				let chosen_id = place.id;
-    			policy[chosen_id].score += NRPA_ALPHA;
     			
-				let z : f32 = excl.iter().fold(0., |acc, &pl_id| acc + policy[pl_id].exp_score);
+				let mut z : f32 = excl.iter().fold(0., |acc, &pl_id| acc + policy[pl_id].exp_score);
+				// it's important to include the chosen move's score in the summation and to decrement it according to line 27 of the algorithm
+				{
+    				let chosen = &mut policy[chosen_id];
+    				z += chosen.exp_score;
+    				debug_assert!(z > 0.0);
+    				
+        			chosen.score += NRPA_ALPHA - NRPA_ALPHA * chosen.exp_score / z;
+        			chosen.exp_score = Self::exp_score(chosen);
+				}
+				
 				for &pl_id in excl.iter() {
 				    let scored = &mut policy[pl_id];
 					scored.score -= NRPA_ALPHA * scored.exp_score / z;

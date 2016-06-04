@@ -11,7 +11,6 @@ extern crate fnv;
 pub mod fastmath;
 
 #[macro_use] mod common;
-mod constructor;
 mod fixed_grid;
 mod global2;
 

@@ -5,6 +5,7 @@ use std::mem;
 use std::ptr;
 use std::marker::PhantomData;
 use std::cmp::min;
+use std::fmt::Debug;
 
 pub trait Key: Sized+Clone+Copy {
     #[inline]
@@ -15,7 +16,7 @@ type NdIndex = usize;
 
 type UpdMarker = usize;
 
-pub trait Item<K: Key>: Clone {
+pub trait Item<K: Key>: Clone+Debug {
     #[inline]
     fn key(&self) -> K;
     #[inline]
@@ -88,6 +89,10 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
+    }
+    
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
     
 //    #[inline(never)]

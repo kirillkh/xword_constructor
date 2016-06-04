@@ -35,7 +35,7 @@ fn with_opts(opts: Opts) {
     let placements = gen_placements(&problem);
     
     let dic_str : Vec<_> = problem.dic.iter().map(|word| (word.id, String::from_utf8_lossy(&*word.str))).collect();
-    println!("DIC={:?}", dic_str);
+    println!("#PLACEMENTS={}, DIC={:?}", placements.len(), dic_str);
     
 	let dim = problem.board.dim();
 	let seq = Constructor::new(dim.0, dim.1, &problem.dic, &placements).construct();
