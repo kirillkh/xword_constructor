@@ -105,15 +105,14 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 	/// Returns 1 for every letter intersected on the board.
     #[inline(never)]
 	pub fn efficiency(&self) -> Eff {
-		let intersections = self.moves.values().fold(0, |acc, bmv| { 
+		let words = self.moves.values().fold(0, |acc, bmv| { 
 				let place = bmv.mv.place();
-				place.fold_positions(acc, |acc, y, x| {
-					acc + self.field[MatrixDim(y, x)].len() - 1
+				acc + place.fold_positions(0, |flag, y, x| {
+					flag | (self.field[MatrixDim(y, x)].len() - 1)
 				})
 		}) as eff_t;
 		
-//		Eff(intersections - (self.moves.len() as eff_t))
-		Eff(intersections/2)
+        Eff(words)
 	}
 	
 	
@@ -151,7 +150,7 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 	}
 	
     #[inline(never)]
-	pub fn fixup_adjacent(mut self) -> (Vec<Move>, Eff) {
+	pub fn fixup_adjacent(mut self) -> (Vec<Move>, Vec<Move>, Eff) {
 		// 1. build the dependency graph, so that when we start removing Moves, we know exactly which other Moves we're breaking
 		struct AdjacencyTracker {
 			last_isection: Option<PlacementId>,
@@ -197,6 +196,8 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 		let between = Range::new(0, 2);
 //		let mut rng = rand::thread_rng();
 
+        let mut removed: Vec<Move> = vec![];
+
 		while !adjacencies.is_empty() {
 			let adj_vec : Vec<_> = adjacencies.into_iter().collect();
 			if cfg!(feature = "debug_rng") {
@@ -209,6 +210,7 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 						if v==0 {
 							let bmv : Option<FixedGridMove<Move>> = self.delete(adj);
 							if let Some(bmv) = bmv {
+							    removed.push(bmv.mv);
 								bmv.dependants
 							} else {
 								vec![]
@@ -233,7 +235,7 @@ impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
 		valid.sort_by(|&(_, idx1), &(_, idx2)| idx1.cmp(&idx2));
 		let valid_moves = valid.into_iter().map(|(mv, _)| mv).collect();
 		
-		(valid_moves, eff)
+		(valid_moves, removed, eff)
 //		
 //		let (fixed_moves, fixed_indices) : (Vec<_>, Vec<_>) = 
 //			fixed.into_iter()
