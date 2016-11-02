@@ -18,7 +18,7 @@ pub struct Align64 { al1: u64, al2: u64 }
 pub type dim = Ix;
 
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MatrixDim(pub dim, pub dim);
 
 impl MatrixDim {
@@ -70,7 +70,7 @@ impl RemoveAxis for MatrixDim {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct LineDim(pub dim);
 
 impl Eq for LineDim {}

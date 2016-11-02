@@ -113,8 +113,8 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         displaced_keep
     }
 
-    #[no_mangle]
 //    #[inline(never)]
+//    #[no_mangle]
     pub fn remove_bulk(&mut self, keys: &[K]) -> Vec<It> {
         self.upd_count += 1;
 
