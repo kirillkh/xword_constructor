@@ -42,7 +42,7 @@ const NRPA_ITERS: u32 = 100;
 const NRPA_ALPHA: f32 = 1.0;
 //const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
-const MAX_STALLED_ITERS: u32 = 2;
+const MAX_STALLED_ITERS: u32 = 30;
 
 
 //const NRPA_LEVEL: u8 = 2;
@@ -158,7 +158,7 @@ impl Constructor {
 
 				let max_stall = MAX_STALLED_ITERS + (level as u32);
 				
-				let must_backtrack = (*new_seq.eff <= *best_seq.eff) && (iter - last_progress >= max_stall);
+				let must_backtrack = (*new_valid_seq.eff <= *best_valid_seq.eff) && (iter - last_progress >= max_stall);
 				
 				self.debug2(level, must_backtrack, iter, last_progress); // TODO debug
 				
@@ -182,8 +182,10 @@ impl Constructor {
 							best_saved_seq = best_seq.clone();
 							best_valid_saved_seq = best_valid_seq.clone();
 						}
+//					} else {
+//    					policy = self.nrpa_adapt(policy, &new_valid_seq);
 					}
-					policy = self.nrpa_adapt(policy, &best_valid_seq.seq);
+					policy = self.nrpa_adapt(policy, &best_valid_seq);
 				}
 				
 			}
@@ -276,10 +278,10 @@ impl Constructor {
 	}
 	
 	
-	fn nrpa_choose<'a, 'b> (&'b mut self, 
-				    		select_tree: &mut SelectTree,
-					    	grid: &mut VariantGrid,
-							resolution_map: &mut ResolutionMap) -> ChosenMove 
+	fn nrpa_choose(&mut self, 
+				   select_tree: &mut SelectTree,
+				   grid: &mut VariantGrid,
+				   resolution_map: &mut ResolutionMap) -> ChosenMove 
 	{
 		// 1. choose a move based on probability proportional to exp(mv.rank)
 		let mv: ScoredMove = if resolution_map.is_empty() {
@@ -316,12 +318,73 @@ impl Constructor {
     	ChosenMove(mv.place.clone(), Rc::new(excl_keys))
 	}
 	
+//	fn nrpa_fixup(&mut self,
+//				  chosen_seq: ChosenSequence,
+//            	  fixed_grid: &mut FixedGrid,
+//				  variants: &mut VariantGrid) -> ChosenSequence 
+//	{
+//	    // 1. obtain the retained|removed partition
+//	    let (retained, removed, eff) = fixed_grid.fixup_adjacent();
+//	    
+//	    // 2. build the variant grid containing only placements that are not excluded by retained (i.e. placements in and excluded by `removed`)
+//	    let mut max_incompat = self.places.len() - removed.len() - retained.len();
+//	    for ChosenMove(ref place, ref excl) in retained.iter() {
+//    	    max_incompat -= excl.len();
+//    	    for mv in excl.iter() {
+//    	        variants.remove(mv.key())
+//    	    }
+//	    }
+//	    
+//	    // 3. collect placements incompatible with `retained` moves
+//	    let mut incompat = Vec::with_capacity(max_incompat);
+//	    for ChosenMove(ref place, _) in retained.iter() {
+//    	    let ic = variants.remove_incompat(place.id);
+//    	    incompat.extend(ic);
+//	    }
+//	    
+//	    
+//	    
+//		// 1. choose a move based on probability proportional to exp(mv.rank)
+//		let mv: ScoredMove = if resolution_map.is_empty() {
+//			self.select_proportional(select_tree)
+//		} else {
+////			self.choose_resolver(select_tree, &resolution_map)
+//            self.select_proportional(resolution_map).mv
+//		};
+//		grid.remove(mv.key());
+//		
+//		// 2. filter out incompatible placements (we must do this before the subsequent steps, because they depend on it)
+//		let excl: Vec<ScoredMove> = self.remove_incompat(&mv, grid, select_tree, resolution_map);
+//		
+////		// 3. for every incompatible move, decrement its associated adjacency counters
+////		for exmv in excl.iter() {
+////			if exmv.place.id == mv.place.id {
+////				// We must not decrement adjacency counters associated with the chosen move, because we check the counters for zero value below.
+////				// No need to decrement them at all, because every move that resolved them (including the chosen one) is being removed.
+////				continue; 
+////			}
+////			
+////			if let Some(mut excl_resolver) = resolution_map.remove(&exmv.place.id) {
+////				for mut adj in excl_resolver.adjs.iter_mut() {
+////					adj.counter.set(adj.counter.get() - 1);
+////					if adj.counter.get() == 0 {
+//////						// fail: this adjacency can no longer be resolved
+//////						return None;
+////					}
+////				}
+////			}
+////		}
+//		
+//		let excl_keys = excl.into_iter().map(|mv| mv.place.id).collect::<Vec<_>>();
+//    	ChosenMove(mv.place.clone(), Rc::new(excl_keys))
+//	}
+	
     #[inline(never)]
-	fn nrpa_place<'a, 'b>(&'b mut self, chosen: ChosenMove,
-		    	  		  fixed_grid: &mut FixedGrid<ChosenMove>,
-		    	  		  variant_grid: &VariantGrid,
-			    		  select_tree: &mut SelectTree,
-			      		  resolution_map: &mut ResolutionMap) -> bool {
+	fn nrpa_place(&mut self, chosen: ChosenMove,
+		    	  fixed_grid: &mut FixedGrid<ChosenMove>,
+		    	  variant_grid: &VariantGrid,
+			      select_tree: &mut SelectTree,
+			      resolution_map: &mut ResolutionMap) -> bool {
 		// 1) place the word on the grid
 		fixed_grid.place(chosen.clone());
 		
@@ -399,7 +462,8 @@ impl Constructor {
 		let rng = self.rng.clone_to_box();
 		let mut fixed_grid = FixedGrid::new(self.h, self.w, &*rng);
 		let mut variants = variants.clone();
-		let mut best_seq = ChosenSequence::new(Vec::with_capacity(self.placements_per_word.len()), Eff(0));
+		let words_count = self.placements_per_word.len();
+		let mut best_seq = ChosenSequence::new(Vec::with_capacity(words_count), Vec::with_capacity(words_count), Eff(0));
 		{
             let mut select_tree: SelectTree = SelectTree::new(policy, policy.len());
             
@@ -428,9 +492,9 @@ impl Constructor {
 		
 		best_seq.eff = fixed_grid.efficiency();
 		
-		let (valid, valid_eff) = fixed_grid.fixup_adjacent();
+		let (valid, removed, valid_eff) = fixed_grid.fixup_adjacent();
 		
-		let best_valid_seq = ChosenSequence::new(valid, valid_eff);
+		let best_valid_seq = ChosenSequence::new(valid, removed, valid_eff);
 		(best_seq, best_valid_seq)
 	}
 	
@@ -448,8 +512,13 @@ impl Constructor {
 //		} else {
 //		    s
 //		}
-		let s = (mv.score + (mv.place.word.str.len() as f32)).exp();
-	    if s.is_infinite() || s > 1.0e8 {
+
+
+//		let s = (mv.score + (mv.place.word.str.len() as f32)).exp();
+		let s = fastexp(mv.score + (mv.place.word.str.len() as f32));
+		
+		
+	    if s.is_infinite() || s > 1.0e8 || s < 0.0 || s.is_nan() {
 //	        f32::MAX
             1.0e8
 	    } else {
@@ -463,9 +532,9 @@ impl Constructor {
 	}
 	
 	
-	fn nrpa_adapt<'a>(&self, mut policy: Policy, seq: &[ChosenMove]) -> Policy {
+	fn nrpa_adapt(&self, mut policy: Policy, seq: &ChosenSequence) -> Policy {
 		{
-			for &ChosenMove(ref place, ref excl) in seq {
+			for &ChosenMove(ref place, ref excl) in seq.seq.iter() {
 				let chosen_id = place.id;
     			
 				let mut z : f32 = excl.iter().fold(0., |acc, &pl_id| acc + policy[pl_id].exp_score);
@@ -473,7 +542,7 @@ impl Constructor {
 				{
     				let chosen = &mut policy[chosen_id];
     				z += chosen.exp_score;
-    				debug_assert!(z > 0.0);
+    				assert!(z > 0.0);
     				
         			chosen.score += NRPA_ALPHA - NRPA_ALPHA * chosen.exp_score / z;
         			chosen.exp_score = Self::exp_score(chosen);
@@ -552,19 +621,20 @@ impl PlaceMove for ChosenMove {
 
 #[derive(Clone, Debug)]
 struct ChosenSequence {
-	seq: Vec<ChosenMove>, 
+	seq: Vec<ChosenMove>,
+	removed: Vec<ChosenMove>, 
 	eff: Eff
 }
 
 impl ChosenSequence {
-	fn new(seq: Vec<ChosenMove>, eff: Eff) -> ChosenSequence {
-		ChosenSequence { seq:seq, eff:eff }
+	fn new(seq: Vec<ChosenMove>, removed: Vec<ChosenMove>, eff: Eff) -> ChosenSequence {
+		ChosenSequence { seq:seq, removed:removed, eff:eff }
 	}
 }
 
 impl Default for ChosenSequence {
 	fn default() -> ChosenSequence {
-		Self::new(vec![], Eff(0))
+		Self::new(vec![], vec![], Eff(0))
 	}
 }
 
