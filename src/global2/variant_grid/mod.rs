@@ -7,6 +7,7 @@ use common::{dim, Placement, PlacementId, Cond};
 use std::rc::Rc;
 use std::ops::{Index, IndexMut};
 use std::mem;
+use std::cmp::{max, min};
 use super::sliced_arena::SlicedArena;
 
 const REMOVED: usize = !0;
@@ -153,20 +154,34 @@ impl VariantGrid {
             // the only case we need to handle here is when "other" is perpendicular to "place" and touches it, but does not intersect
             if v0 > 0 {
                 self.filter_incompat(y-perpyc, x-perpxc, &mut removed, |other| {
-                    let (v1, _) = other.align(place.orientation);
+                    let (v1, u1) = other.align(place.orientation);
+                    let len1 = other.word.len();
                     
-                    place.orientation != other.orientation && 
-                    v1 + other.word.len() == v0	// touches from above but does not intersect => incompatible
+                    (place.orientation != other.orientation && 
+                     v1 + len1 == v0)	// touches from above but does not intersect => incompatible
+//                    // TEST
+//                    || place.orientation == other.orientation && {
+//                        let overlap_from = max(u0, u1);
+//                        let overlap_to = min(u0+len0, u1+len1);
+//                        overlap_from < overlap_to-1
+//                    }
                 });
             }
             
             // remove incompatible placements in the cell below the current cell (for horizontal orientation)
             if v0 + 1 < maxv {
                 self.filter_incompat(y+perpyc, x+perpxc, &mut removed, |other| {
-                    let (v1, _) = other.align(place.orientation);
+                    let (v1, u1) = other.align(place.orientation);
+                    let len1 = other.word.len();
                     
-                    place.orientation != other.orientation && 
-                    v1 == v0 + 1 // touches from below but does not intersect => incompatible
+                    (place.orientation != other.orientation && 
+                     v1 == v0 + 1) // touches from below but does not intersect => incompatible
+//                    // TEST
+//                    || place.orientation == other.orientation && {
+//                        let overlap_from = max(u0, u1);
+//                        let overlap_to = min(u0+len0, u1+len1);
+//                        overlap_from < overlap_to-1
+//                    }
                 });
             }
         });
