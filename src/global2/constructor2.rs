@@ -42,7 +42,7 @@ const NRPA_ITERS: u32 = 100;
 const NRPA_ALPHA: f32 = 1.0;
 //const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
-const MAX_STALLED_ITERS: u32 = 30;
+const MAX_STALLED_ITERS: u32 = 100;
 
 
 //const NRPA_LEVEL: u8 = 2;
@@ -532,26 +532,60 @@ impl Constructor {
     }
 
 
+    /*
+        Let $X_i = (c_i, E_i)$ be the chosen sequence of $n$ moves, where $c_i$ is the chosen move
+        and $E_i$ is a collection of moves that were eliminated in that step. Let $w_{c_i}$ denote
+        the weight of the chosen move and $w_{ij}$ denote the weight associated with the $j$'th move
+        eliminated in step $i$.
+
+        We calculate the adapted weights for step $i$ as follows:
+
+        let \[ z_i := w_{c_i} + \sum_{j} w_{ij} \]
+            \[ T_i := z_i + ... + z_{n-1} \]
+
+        Then,
+            \[ w'_{ij} := w_{ij} - \alpha e^{w_{ij}} (\frac{1}{T_0} + ... + \frac{1}{T_i}) \]
+            \[ w'_{c_i} := \alpha + w_{c_i} - \alpha e^{w_{c_i}} (\frac{1}{T_0} + ... + \frac{1}{T_i}) \]
+
+        This can be done in time linear in the total number of moves.
+    */
     fn nrpa_adapt(&self, mut policy: Policy, seq: &ChosenSequence) -> Policy {
         {
+            let mut zs: Vec<f32> = seq.seq.iter().map(|&ChosenMove(ref place, ref excl)|
+                policy[place.id].exp_score +
+                    excl.iter().fold(0., |acc, &pl_id|
+                        acc + policy[pl_id].exp_score
+                    )
+            ).collect();
+
+            let mut Ts: Vec<f32> = Vec::new();
+            let mut acc: f32 = 0.;
+            for &z in zs.iter().rev() {
+                acc += z;
+                Ts.push(acc)
+            }
+
+
+            let mut adjust: f32 = 0.;
+
             for &ChosenMove(ref place, ref excl) in seq.seq.iter() {
                 let chosen_id = place.id;
 
-                let mut z : f32 = excl.iter().fold(0., |acc, &pl_id| acc + policy[pl_id].exp_score);
+                adjust += 1./Ts.pop().unwrap();
+                assert!(adjust > 0.0);
+
                 // it's important to include the chosen move's score in the summation and to decrement it according to line 27 of the algorithm
                 {
                     let chosen = &mut policy[chosen_id];
-                    z += chosen.exp_score;
-                    assert!(z > 0.0);
 
-                    chosen.score += NRPA_ALPHA - NRPA_ALPHA * chosen.exp_score / z;
+                    chosen.score += NRPA_ALPHA - NRPA_ALPHA * chosen.exp_score * adjust;
                     chosen.exp_score = Self::exp_score(chosen);
                 }
 
                 for &pl_id in excl.iter() {
                     let scored = &mut policy[pl_id];
-                    scored.score -= NRPA_ALPHA * scored.exp_score / z;
-                    scored.exp_score = Self::exp_score(&scored);
+                    scored.score -= NRPA_ALPHA * scored.exp_score * adjust;
+                    scored.exp_score = Self::exp_score(scored);
                 }
             }
         }
