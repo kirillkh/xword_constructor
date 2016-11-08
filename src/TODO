@@ -1,0 +1,13 @@
+1) optimization: move from variant_grid to variant_graph:
+    type GlobalIndex = usize
+    type NeighbourIndex = usize
+
+    type VariantGraph = Vec<VariantPlacement> // indexed by PlacementId
+    struct VariantPlacement { id: PlacementId, incompat: Vec<Neighbour> }
+    struct Neighbour: { idx: GlobalIndex, prev: NeighbourIndex, next: NeighbourIndex, removed: bool }
+
+2) try the incremental approach instead of the global one
+
+3) instead of MAX_STALLED_ITERS, employ a metric based on the ranks (e.g.: min(rank of words on the fixed grid) >= 6.0).
+   This should reduce the number of iters we burn uselessly (when there is no chance to find an improvement).
+
