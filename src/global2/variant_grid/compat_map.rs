@@ -11,8 +11,6 @@ pub struct CompatMap {
 
 impl CompatMap {
     pub fn new(places: &[Placement]) -> CompatMap {
-        let mut total_entries = 0;
-
         let mut sets = Vec::new();
         for place in places.iter() {
             let pid = place.id;
@@ -21,14 +19,12 @@ impl CompatMap {
             for place2 in places.iter() {
                 if !CompatMap::check_compat(place, place2) {
                     set.insert(place2.id.0);
-                    total_entries += 1;
                 }
             }
 
             sets.push(set)
         }
 
-        println!("total_entries: {}", total_entries);
         CompatMap { sets:sets }
     }
 

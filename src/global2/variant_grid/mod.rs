@@ -15,6 +15,8 @@ use super::sliced_arena::SlicedArena;
 
 const REMOVED: usize = !0;
 
+const ALWAYS_REMOVE: usize = ::std::usize::MAX;
+
 
 
 
@@ -169,12 +171,12 @@ impl VariantGrid {
             
         // remove incompatible placements in the cell to the left of the placement (for horizontal orientation)
         if u0 > 0 {
-            self.filter_incompat(place_y-yc, place_x-xc, &mut removed, PlacementId(::std::usize::MAX));
+            self.filter_incompat(place_y-yc, place_x-xc, &mut removed, PlacementId(ALWAYS_REMOVE));
         }
         
         // remove incompatible placements in the cell to the right of the placement (for horizontal orientation)
         if u0+len0 < maxu {
-            self.filter_incompat(place_y+len0.cond(yc), place_x+len0.cond(xc), &mut removed, PlacementId(::std::usize::MAX));
+            self.filter_incompat(place_y+len0.cond(yc), place_x+len0.cond(xc), &mut removed, PlacementId(ALWAYS_REMOVE));
         }
         
         removed
@@ -204,7 +206,7 @@ impl VariantGrid {
         tmp_removed.reserve_exact(self.field[(celly, cellx)].len());
         
         for &entry_id in self.field[(celly, cellx)].iter() {
-            if place_id.0 == ::std::usize::MAX || !self.compats.compat(place_id, entry_id) {
+            if place_id.0 == ALWAYS_REMOVE || !self.compats.compat(place_id, entry_id) {
                 tmp_removed.push(entry_id);
                 removed.push(entry_id);
             }
