@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
-use ndarray::OwnedArray;
+use ndarray::Array;
 use common::{dim, Placement, PlacementId, MatrixDim, Orientation, AbstractRng};
 
 use rand::distributions::Range;
@@ -49,7 +49,7 @@ pub struct FixedGridMove<Move: PlaceMove> {
 //---- FixedGrid ---------------------------------------------------------------------------
 
 pub struct FixedGrid<'a, Move: PlaceMove> {
-	pub field: OwnedArray<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
+	pub field: Array<Vec<PlacementId>, MatrixDim>, // TODO: make the vecs constant size 2
 	pub moves: HashMap<PlacementId, FixedGridMove<Move>>,
 	rng: &'a AbstractRng,
 	counter: usize
@@ -58,7 +58,7 @@ pub struct FixedGrid<'a, Move: PlaceMove> {
 impl<'a, Move: PlaceMove> FixedGrid<'a, Move> {
     #[inline(never)]
 	pub fn new(h: dim, w: dim, rng: &'a AbstractRng) -> FixedGrid<'a, Move> {
-		FixedGrid { field: OwnedArray::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
+		FixedGrid { field: Array::default(MatrixDim(h, w)), moves: HashMap::new(), rng:rng, counter:0 }
 	}
 	
 	pub fn place_all(&mut self, seq: Vec<Move>) {

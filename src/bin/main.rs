@@ -3,6 +3,7 @@ extern crate regex;
 extern crate ndarray;
 extern crate rand;
 extern crate getopts;
+extern crate fnv;
 
 use getopts::Options;
 use std::env;
@@ -15,7 +16,7 @@ use std::path::Path;
 
 use regex::bytes::Regex;
 
-use ndarray::{OwnedArray, Axis};
+use ndarray::{Array, Axis};
 
 use xword::{FixedGrid, Constructor, dim, Orientation, Placement, MatrixDim, LineDim, Problem};
 use xword::util;
@@ -193,7 +194,7 @@ fn parse_problem(bytes: Vec<u8>) -> Problem {
         dic.push(word);
     }
     
-	let mut board: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(h, w));
+	let mut board: Array<bool, MatrixDim> = Array::default(MatrixDim(h, w));
 	let re = Regex::new(r"(?m)\n?(^[_#]+)").unwrap();
     for (j, cap) in re.captures_iter(board_str).enumerate() {
     	for (i, &c) in cap.at(1).unwrap().iter().enumerate() {
@@ -230,7 +231,7 @@ mod placement_tests {
 	
 	#[test]
 	fn placement_ids_are_nat() {
-		let grid: OwnedArray<bool, MatrixDim> = OwnedArray::default(MatrixDim(4, 3));
+		let grid: Array<bool, MatrixDim> = Array::default(MatrixDim(4, 3));
 		let words = vec![word(b"ab"), word(b"bc"), word(b"cde"), word(b"cdef"), word(b"fedc"), word(b"fedcb")];
 		let problem = Problem::new(words, grid);
 		let places = super::gen_placements(&problem);

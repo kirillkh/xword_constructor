@@ -95,23 +95,23 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         self.data.len()
     }
     
-//    #[inline(never)]
-    fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<NdIndex>) -> Vec<bool> {
-        let mut displaced_keep = vec![true; rm_indices.len()];
-        let new_len = self.data.len();
-        let mut i = 0;
-        while i < rm_indices.len() {
-            let idx = rm_indices[i];
-            if idx >= new_len {
-                rm_indices.swap_remove(i);
-                displaced_keep[idx - new_len] = false;
-            } else {
-                i += 1;
-            }
-        }
-        
-        displaced_keep
-    }
+////    #[inline(never)]
+//    fn remove_bulk__items_to_keep(&mut self, rm_indices: &mut Vec<NdIndex>) -> Vec<bool> {
+//        let mut displaced_keep = vec![true; rm_indices.len()];
+//        let new_len = self.data.len();
+//        let mut i = 0;
+//        while i < rm_indices.len() {
+//            let idx = rm_indices[i];
+//            if idx >= new_len {
+//                rm_indices.swap_remove(i);
+//                displaced_keep[idx - new_len] = false;
+//            } else {
+//                i += 1;
+//            }
+//        }
+//
+//        displaced_keep
+//    }
 
 //    #[inline(never)]
 //    #[no_mangle]

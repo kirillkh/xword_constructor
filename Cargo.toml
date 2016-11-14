@@ -22,7 +22,7 @@ ndarray = "0.6"
 rand = "0.3"
 regex = "0.1"
 getopts = "0.2"
-fnv = "1.0.2"
+fnv = "1.0.5"
 
 [profile.release]
 opt-level = 3

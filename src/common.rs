@@ -1,6 +1,6 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, IndexMut, Deref};
-use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, OwnedArray};
+use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, Array};
 use rand::{SeedableRng, XorShiftRng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
 use global2::data::ScoredMove;
@@ -295,7 +295,7 @@ impl Placement {
 	
 	pub fn compatible(&self, other: &Placement) -> bool {
 		if self.word.id == other.word.id {
-			return false
+			return self.id == other.id
 		}
 		
 		let (v0, u0) = self.align(self.orientation);
@@ -331,11 +331,11 @@ impl AsRef<Placement> for Placement {
 pub struct Problem {
     dic_arena: SlicedArena<u8>,
 	pub dic: Vec<Word>,
-	pub board: OwnedArray<bool, MatrixDim>,
+	pub board: Array<bool, MatrixDim>,
 }
 
 impl Problem {
-	pub fn new(dic: Vec<Vec<u8>>, board: OwnedArray<bool, MatrixDim>) -> Problem {
+	pub fn new(dic: Vec<Vec<u8>>, board: Array<bool, MatrixDim>) -> Problem {
     	let (dic, dic_arena) = Self::dic_arena(dic);
 		Problem { dic:dic, dic_arena:dic_arena, board:board }
 	}

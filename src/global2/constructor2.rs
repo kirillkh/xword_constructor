@@ -24,14 +24,19 @@ use super::variant_grid::{VariantGrid};
 //const NRPA_ITERS: u32 = 400;
 //const NRPA_ALPHA: f32 = 0.125;
 
-// GREAT RESULTS!
+
+//// !!! 32 in crossc
 //const NRPA_LEVEL: u8 = 4;
+//const NRPA_ITERS: u32 = 32;
+//const NRPA_ALPHA: f32 = 1.0;
+//const MAX_STALLED_ITERS: u32 = 100;
 
-//const NRPA_LEVEL: u8 = 3;
-//const NRPA_ITERS: u32 = 42;
-
+// !!! 32 in crossc
 const NRPA_LEVEL: u8 = 3;
 const NRPA_ITERS: u32 = 100;
+const NRPA_ALPHA: f32 = 1.0;
+const MAX_STALLED_ITERS: u32 = 100;
+
 
 
 //const NRPA_ALPHA: f32 = 0.03125;
@@ -39,10 +44,8 @@ const NRPA_ITERS: u32 = 100;
 //const NRPA_ALPHA: f32 = 0.125;
 //const NRPA_ALPHA: f32 = 0.25;
 //const NRPA_ALPHA: f32 = 0.5;
-const NRPA_ALPHA: f32 = 1.0;
 //const NRPA_ALPHA: f32 = 2.;
 //const NRPA_ALPHA: f32 = 4.;
-const MAX_STALLED_ITERS: u32 = 100;
 
 
 //const NRPA_LEVEL: u8 = 2;
@@ -551,7 +554,7 @@ impl Constructor {
     */
     fn nrpa_adapt(&self, mut policy: Policy, seq: &ChosenSequence) -> Policy {
         {
-            let mut zs: Vec<f32> = seq.seq.iter().map(|&ChosenMove(ref place, ref excl)|
+            let zs: Vec<f32> = seq.seq.iter().map(|&ChosenMove(ref place, ref excl)|
                 policy[place.id].exp_score +
                     excl.iter().fold(0., |acc, &pl_id|
                         acc + policy[pl_id].exp_score

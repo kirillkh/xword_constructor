@@ -2,7 +2,7 @@ mod shrink_vec;
 
 use self::shrink_vec::ShrinkVec;
 
-use ndarray::{OwnedArray, Ix};
+use ndarray::{Array, Ix};
 use common::{dim, Placement, PlacementId, Cond};
 use std::rc::Rc;
 use std::ops::{Index, IndexMut};
@@ -22,7 +22,7 @@ pub struct VariantGrid {
     
     // cells are arrays of PlacementId's in any order, as long as the invariant is satisfied: 
     // for all cells and all i: entries[cell[i]][corresponding char index] == i
-	field: OwnedArray<ShrinkVec<'static, PlacementId>, (Ix, Ix)>,
+	field: Array<ShrinkVec<'static, PlacementId>, (Ix, Ix)>,
 	
     // map from PlacementId to (map from char_idx to (index into the containing cell))
     entries: SlicedArena<usize>,
@@ -49,10 +49,10 @@ impl Clone for VariantGrid {
 }
 
 impl VariantGrid {
-    fn build_grid(h: dim, w: dim, cell_slices: &mut SlicedArena<PlacementId>) -> OwnedArray<ShrinkVec<'static, PlacementId>, (Ix, Ix)> {
+    fn build_grid(h: dim, w: dim, cell_slices: &mut SlicedArena<PlacementId>) -> Array<ShrinkVec<'static, PlacementId>, (Ix, Ix)> {
         let empty: &mut [PlacementId] = &mut [];
         let default_sv = ShrinkVec::new(empty);
-        let mut field: OwnedArray<ShrinkVec<PlacementId>, (Ix, Ix)> = OwnedArray::from_elem((h, w), default_sv);
+        let mut field: Array<ShrinkVec<PlacementId>, (Ix, Ix)> = Array::from_elem((h, w), default_sv);
         
         for y in 0..h {
             for x in 0..w {
@@ -75,13 +75,13 @@ impl VariantGrid {
         let mut entries: SlicedArena<usize> = SlicedArena::new(&place_word_lens);
         
         // 2. calculate the number of placements at each grid cell
-        let cell_counts: OwnedArray<usize, (Ix, Ix)> = Self::places_per_cell(&*places, h, w);
+        let cell_counts: Array<usize, (Ix, Ix)> = Self::places_per_cell(&*places, h, w);
         
         // 3. build the sliced array for backing storage of cell vecs
         let mut cell_slices = SlicedArena::new(cell_counts.as_slice().unwrap());
         
         // 4. build the grid
-        let mut field: OwnedArray<ShrinkVec<PlacementId>, (Ix, Ix)> = Self::build_grid(h, w, &mut cell_slices);
+        let mut field: Array<ShrinkVec<PlacementId>, (Ix, Ix)> = Self::build_grid(h, w, &mut cell_slices);
         
         // 5. initialize the cell vecs and, in the same pass, entires for each placement 
         for (i, place) in places.iter().enumerate() {
@@ -107,8 +107,8 @@ impl VariantGrid {
     }
     
     
-    fn places_per_cell(places: &Vec<Placement>, h: dim, w: dim) -> OwnedArray<usize, (Ix, Ix)> {
-        let mut field = OwnedArray::from_elem((h, w), 0);
+    fn places_per_cell(places: &Vec<Placement>, h: dim, w: dim) -> Array<usize, (Ix, Ix)> {
+        let mut field = Array::from_elem((h, w), 0);
         for place in places {
             place.fold_positions((), |(), y, x| {
                 field[(y, x)] += 1;
@@ -163,7 +163,7 @@ impl VariantGrid {
 //                    || place.orientation == other.orientation && {
 //                        let overlap_from = max(u0, u1);
 //                        let overlap_to = min(u0+len0, u1+len1);
-//                        overlap_from < overlap_to-1
+//                        overlap_from < overlap_to
 //                    }
                 });
             }
@@ -180,7 +180,7 @@ impl VariantGrid {
 //                    || place.orientation == other.orientation && {
 //                        let overlap_from = max(u0, u1);
 //                        let overlap_to = min(u0+len0, u1+len1);
-//                        overlap_from < overlap_to-1
+//                        overlap_from < overlap_to
 //                    }
                 });
             }
