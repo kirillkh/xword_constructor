@@ -6,6 +6,7 @@ extern crate ndarray;
 extern crate rand;
 extern crate test;
 extern crate fnv;
+extern crate bit_set;
 
 //pub mod board;
 pub mod fastmath;
