@@ -1,9 +1,12 @@
 mod shrink_vec;
+mod compat_map;
 
 use self::shrink_vec::ShrinkVec;
 
-use ndarray::{Array, Ix};
 use common::{dim, Placement, PlacementId, Cond};
+use self::compat_map::CompatMap;
+
+use ndarray::{Array, Ix};
 use std::rc::Rc;
 use std::ops::{Index, IndexMut};
 use std::mem;
@@ -32,6 +35,9 @@ pub struct VariantGrid {
     
     
     tmp_removed: Vec<PlacementId>,
+
+
+    compats: Rc<CompatMap>
 }
 
 impl Clone for VariantGrid {
@@ -39,12 +45,13 @@ impl Clone for VariantGrid {
         let mut slices = self.cell_slices.clone();
         let entries = self.entries.clone();
         let places = self.places.clone();
+        let compats = self.compats.clone();
         
         // make sure the pointers inside ShrinkVecs are to the cloned cell_slices arena
         let (h, w) = self.field.dim();
         let field = Self::build_grid(h, w, &mut slices);
         
-        VariantGrid { cell_slices:slices, entries:entries, field:field, places:places, tmp_removed:vec![] }
+        VariantGrid { cell_slices:slices, entries:entries, field:field, places:places, tmp_removed:vec![], compats:compats }
     }
 }
 
@@ -102,8 +109,9 @@ impl VariantGrid {
                 cell_entries[counter] = PlacementId(i);
             });
         }
-        
-        VariantGrid { field: field, cell_slices:cell_slices, entries: entries, places: places, tmp_removed: vec![] }
+
+        let compats = CompatMap::new(&places);
+        VariantGrid { field: field, cell_slices:cell_slices, entries: entries, places: places, tmp_removed: vec![], compats: Rc::new(compats) }
     }
     
     
@@ -143,46 +151,17 @@ impl VariantGrid {
         
         place.fold_positions_index((), |(), y, x, char_idx| {
             // remove incompatible placements in the current cell
-            self.filter_incompat(y, x, &mut removed, |other| {
-                    let c_idx = (y - other.y) + (x - other.x);
-                    
-                    place.orientation == other.orientation ||
-                    place.word[char_idx] != other.word[c_idx]
-            });
+            self.filter_incompat(y, x, &mut removed, place_id);
             
             // remove incompatible placements in the cell above the current cell (for horizontal orientation)
             // the only case we need to handle here is when "other" is perpendicular to "place" and touches it, but does not intersect
             if v0 > 0 {
-                self.filter_incompat(y-perpyc, x-perpxc, &mut removed, |other| {
-                    let (v1, u1) = other.align(place.orientation);
-                    let len1 = other.word.len();
-                    
-                    (place.orientation != other.orientation && 
-                     v1 + len1 == v0)	// touches from above but does not intersect => incompatible
-//                    // TEST
-//                    || place.orientation == other.orientation && {
-//                        let overlap_from = max(u0, u1);
-//                        let overlap_to = min(u0+len0, u1+len1);
-//                        overlap_from < overlap_to
-//                    }
-                });
+                self.filter_incompat(y-perpyc, x-perpxc, &mut removed, place_id);
             }
             
             // remove incompatible placements in the cell below the current cell (for horizontal orientation)
             if v0 + 1 < maxv {
-                self.filter_incompat(y+perpyc, x+perpxc, &mut removed, |other| {
-                    let (v1, u1) = other.align(place.orientation);
-                    let len1 = other.word.len();
-                    
-                    (place.orientation != other.orientation && 
-                     v1 == v0 + 1) // touches from below but does not intersect => incompatible
-//                    // TEST
-//                    || place.orientation == other.orientation && {
-//                        let overlap_from = max(u0, u1);
-//                        let overlap_to = min(u0+len0, u1+len1);
-//                        overlap_from < overlap_to
-//                    }
-                });
+                self.filter_incompat(y+perpyc, x+perpxc, &mut removed, place_id);
             }
         });
         
@@ -190,18 +169,12 @@ impl VariantGrid {
             
         // remove incompatible placements in the cell to the left of the placement (for horizontal orientation)
         if u0 > 0 {
-            self.filter_incompat(place_y-yc, place_x-xc, &mut removed, |_| {
-                // any placement in this cell is incompatible
-                true
-            });
+            self.filter_incompat(place_y-yc, place_x-xc, &mut removed, PlacementId(::std::usize::MAX));
         }
         
         // remove incompatible placements in the cell to the right of the placement (for horizontal orientation)
         if u0+len0 < maxu {
-            self.filter_incompat(place_y+len0.cond(yc), place_x+len0.cond(xc), &mut removed, |_| {
-                // any placement in this cell is incompatible
-                true
-            });
+            self.filter_incompat(place_y+len0.cond(yc), place_x+len0.cond(xc), &mut removed, PlacementId(::std::usize::MAX));
         }
         
         removed
@@ -214,7 +187,7 @@ impl VariantGrid {
     }
     
 //    #[inline(never)]
-    fn filter_incompat<F: Fn(&Placement) -> bool>(&mut self, celly: dim, cellx: dim, removed: &mut Vec<PlacementId>, must_remove: F) {
+    fn filter_incompat(&mut self, celly: dim, cellx: dim, removed: &mut Vec<PlacementId>, place_id: PlacementId) {
 //        let to_remove: Vec<PlacementId> = self.iter_at(celly, cellx)
 //                                              .filter(|&&entry_id|
 //                                                  must_remove(&self.places[entry_id])
@@ -231,7 +204,7 @@ impl VariantGrid {
         tmp_removed.reserve_exact(self.field[(celly, cellx)].len());
         
         for &entry_id in self.field[(celly, cellx)].iter() {
-            if must_remove(&self.places[entry_id]) {
+            if place_id.0 == ::std::usize::MAX || !self.compats.compat(place_id, entry_id) {
                 tmp_removed.push(entry_id);
                 removed.push(entry_id);
             }

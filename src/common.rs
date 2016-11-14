@@ -1,5 +1,6 @@
 //---- Dim -------------------------------------------------------------------------------
 use std::ops::{Index, IndexMut, Deref};
+use std::cmp::{max, min};
 use ndarray::{Dimension, Si, RemoveAxis, Axis, Ix, Array};
 use rand::{SeedableRng, XorShiftRng, thread_rng};
 use rand::distributions::{IndependentSample, Range};
@@ -305,6 +306,12 @@ impl Placement {
 		if other.orientation == self.orientation {
 				u0 + len0	< u1 || u1 + len1	< u0 // other is right or left + gap
 			||	v0 != v1							 // other is below or above
+			// TEST
+			&& (((v0 as isize) - (v1 as isize)).abs()>1 || {
+					let overlap_from = max(u0, u1);
+					let overlap_to = min(u0+len0, u1+len1);
+					overlap_from >= overlap_to
+				})
 		} else {
 			!(
 					(v1 <= v0 + 1	&& v0		<= v1 + len1 &&	// other contains or touches self vertically
