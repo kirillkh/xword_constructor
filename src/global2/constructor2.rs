@@ -188,7 +188,7 @@ impl Constructor {
 //                    } else {
 //                        policy = self.nrpa_adapt(policy, &new_valid_seq);
                     }
-                    policy = self.nrpa_adapt(policy, &best_valid_seq);
+                    policy = self.nrpa_adapt(policy, &best_seq);
                 }
 
             }
