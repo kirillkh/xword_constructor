@@ -26,7 +26,6 @@ pub trait Item<K: Key>: Clone+Debug {
 #[derive(Debug)]
 struct Node<K: Key, It: Item<K>> {
     item: It,
-    idx: NdIndex,
     upd_marker: UpdMarker,
     total: f32,
     ph: PhantomData<K>
@@ -55,8 +54,8 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
         for i in 0..n {
             let it = &items[i];
             let weight = it.weight();
-            let node = Node { idx:i, upd_marker:0, item:it.clone(), total:weight, ph: PhantomData };
-            unsafe { 
+            let node = Node { upd_marker:0, item:it.clone(), total:weight, ph: PhantomData };
+            unsafe {
                 ptr::write(nodes_ptr.offset(i as isize), node);
             }
         }
@@ -270,7 +269,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             None => {
                 let idx = self.data.len();
                 let weight = it.weight();
-                self.data.push(Node { idx:idx, upd_marker:self.upd_count, item:it, total:weight, ph:PhantomData });
+                self.data.push(Node { upd_marker:self.upd_count, item:it, total:weight, ph:PhantomData });
                 self.insert_key(k, idx);
                 (None, idx)
             } 
@@ -330,7 +329,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
             let idx = len + i;
             let old = self.insert_key(key, idx);
             assert!(old.is_none());
-            self.data.push(Node { idx:idx, upd_marker:self.upd_count, total:it.weight(), item:it, ph:PhantomData });
+            self.data.push(Node { upd_marker:self.upd_count, total:it.weight(), item:it, ph:PhantomData });
         }
         
         self.update_range(upd_from, upd_to);
@@ -389,7 +388,7 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     #[inline]
     fn remove_last(&mut self) -> It {
         let last = self.data.len() - 1;
-        let Node{ item, idx:_, upd_marker:_, total:_, ph:_ } = self.data.swap_remove(last);
+        let Node{ item, upd_marker:_, total:_, ph:_ } = self.data.swap_remove(last);
         self.update_ancestors(last);
         
         item
@@ -592,15 +591,6 @@ impl<K: Key, It: Item<K>> WeightedSelectionTree<K, It> {
     
     fn righti(idx: NdIndex) -> NdIndex {
         (idx<<1) + 2
-    }
-    
-    
-    fn left(node: &Node<K, It>) -> NdIndex {
-        Self::lefti(node.idx)
-    }
-    
-    fn right(node: &Node<K, It>) -> NdIndex {
-        Self::righti(node.idx)
     }
 }
 
